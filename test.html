@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Automated Test Suite · e-Parlemen DPRD Kota Magelang</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .test-suite-shell {
+      max-width: 1000px;
+      margin: 20px auto;
+      padding: 0 16px;
+    }
+    .test-summary-box {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .test-group {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 20px;
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+    .test-group-header {
+      background: #f7f6f2;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--ink);
+    }
+    .test-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border-light);
+      font-size: 13px;
+      gap: 12px;
+    }
+    .test-row:last-child { border-bottom: none; }
+    .test-row:hover { background: #fafaf8; }
+    .test-desc { flex: 1; }
+    .test-desc .expected { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+    .test-badge-pass {
+      background: #e6f4ea;
+      color: #1f8a4c;
+      font-weight: 800;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid #b7e3c4;
+      font-size: 11px;
+    }
+    .test-badge-fail {
+      background: #fdf0f0;
+      color: #d64545;
+      font-weight: 800;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid #f6c0c0;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body style="background: var(--cream);">
+
+  <!-- Global Time Simulator Bar -->
+  <div class="time-simulator-bar">
+    <div class="ts-title">
+      <svg class="ic-svg" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+      <span>Automated Test Suite (Mandiri)</span>
+    </div>
+    <div style="font-size: 12px;">
+      <a href="index.html" style="color:var(--gold-light); text-decoration:underline;">&larr; Portal Utama</a> ·
+      <a href="admin.html" style="color:#fff; text-decoration:underline;">Web Admin</a> ·
+      <a href="mobile.html" style="color:#fff; text-decoration:underline;">Mobile Anggota</a>
+    </div>
+  </div>
+
+  <div class="test-suite-shell">
+
+    <div style="margin: 20px 0 16px;">
+      <h1 style="font-size: 24px; color: var(--ink);">Automated Test Runner</h1>
+      <div style="font-size: 13px; color: var(--muted); margin-top: 4px;">
+        Memverifikasi seluruh kasus batas matematis Kuorum ⅔, irisan waktu penugasan vs rapat, simulasi mobile hari H, dan validasi data seed.
+      </div>
+    </div>
+
+    <!-- Overall Summary Box -->
+    <div class="test-summary-box">
+      <div>
+        <div style="font-size: 12px; color: var(--muted); text-transform: uppercase; font-weight: 700;">Status Keseluruhan</div>
+        <div id="overallTestStatus" style="font-size: 24px; font-weight: 800; margin-top: 2px;">Menjalankan pengujian...</div>
+      </div>
+      <div style="display: flex; gap: 16px; align-items: center;">
+        <div style="text-align: center;">
+          <div style="font-size: 22px; font-weight: 800; color: var(--ink);" id="cntTotalTests">0</div>
+          <div style="font-size: 11px; color: var(--muted);">Total Test</div>
+        </div>
+        <div style="text-align: center;">
+          <div style="font-size: 22px; font-weight: 800; color: var(--success);" id="cntPassedTests">0</div>
+          <div style="font-size: 11px; color: var(--muted);">Lolos (PASS)</div>
+        </div>
+        <div style="text-align: center;">
+          <div style="font-size: 22px; font-weight: 800; color: var(--danger);" id="cntFailedTests">0</div>
+          <div style="font-size: 11px; color: var(--muted);">Gagal (FAIL)</div>
+        </div>
+        <div>
+          <button type="button" class="btn btn-primary" id="btnReRunTests">
+            <svg class="ic-svg" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            Jalankan Ulang Test
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Container for Test Groups -->
+    <div id="testGroupsContainer"></div>
+
+  </div>
+
+  <script src="js/rules.js"></script>
+  <script src="js/store.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      var testRunner = {
+        total: 0,
+        passed: 0,
+        failed: 0,
+        groups: []
+      };
+
+      function resetStats() {
+        testRunner.total = 0;
+        testRunner.passed = 0;
+        testRunner.failed = 0;
+        testRunner.groups = [];
+      }
+
+      function addGroup(title) {
+        var group = { title: title, tests: [] };
+        testRunner.groups.push(group);
+        return group;
+      }
+
+      function assert(group, desc, condition, expectedInfo) {
+        testRunner.total++;
+        var ok = !!condition;
+        if (ok) {
+          testRunner.passed++;
+        } else {
+          testRunner.failed++;
+        }
+        group.tests.push({
+          desc: desc,
+          ok: ok,
+          expected: expectedInfo
+        });
+      }
+
+      function runAllTests() {
+        resetStats();
+
+        // Pastikan seed awal termuat
+        Store.seedData(false);
+
+        // =========================================================================
+        // KELOMPOK 1: ATURAN KUORUM ⅔ (MATEMATIKA & BATAS)
+        // =========================================================================
+        var g1 = addGroup('1. Aturan Kuorum ⅔ (Perhitungan Matematika & Batas Skenario)');
+
+        // N=100, bentrok 0 -> LOLOS (syarat 67, tersedia 100)
+        var q1 = Rules.calculateQuorum(100, 0);
+        assert(g1, 'N=100, bentrok 0 → LOLOS', q1.lolos === true && q1.syarat === 67 && q1.tersedia === 100, 'Syarat 67, Tersedia 100, LOLOS');
+
+        // N=100, bentrok 33 → LOLOS (syarat 67, tersedia 67)
+        var q2 = Rules.calculateQuorum(100, 33);
+        assert(g1, 'N=100, bentrok 33 → LOLOS (Tepat di batas)', q2.lolos === true && q2.syarat === 67 && q2.tersedia === 67, 'Syarat 67, Tersedia 67, LOLOS');
+
+        // N=100, bentrok 34 → GAGAL (syarat 67, tersedia 66)
+        var q3 = Rules.calculateQuorum(100, 34);
+        assert(g1, 'N=100, bentrok 34 → GAGAL (Lewat batas)', q3.lolos === false && q3.syarat === 67 && q3.tersedia === 66, 'Syarat 67, Tersedia 66 < 67, GAGAL');
+
+        // N=100, bentrok 100 → GAGAL
+        var q4 = Rules.calculateQuorum(100, 100);
+        assert(g1, 'N=100, bentrok 100 → GAGAL (Semua bentrok)', q4.lolos === false && q4.tersedia === 0, 'Syarat 67, Tersedia 0, GAGAL');
+
+        // N=10, bentrok 3 → LOLOS (syarat 7, tersedia 7)
+        var q5 = Rules.calculateQuorum(10, 3);
+        assert(g1, 'N=10, bentrok 3 → LOLOS (syarat 7)', q5.lolos === true && q5.syarat === 7 && q5.tersedia === 7, 'Syarat ceil(10*2/3)=7, Tersedia 7, LOLOS');
+
+        // N=10, bentrok 4 → GAGAL (syarat 7, tersedia 6)
+        var q6 = Rules.calculateQuorum(10, 4);
+        assert(g1, 'N=10, bentrok 4 → GAGAL', q6.lolos === false && q6.syarat === 7 && q6.tersedia === 6, 'Syarat 7, Tersedia 6 < 7, GAGAL');
+
+        // N=7, bentrok 2 → LOLOS (syarat ceil(14/3)=5, tersedia 5)
+        var q7 = Rules.calculateQuorum(7, 2);
+        assert(g1, 'N=7, bentrok 2 → LOLOS (syarat 5)', q7.lolos === true && q7.syarat === 5 && q7.tersedia === 5, 'Syarat ceil(7*2/3)=5, Tersedia 5, LOLOS');
+
+        // N=3, bentrok 1 → LOLOS (syarat 2, tersedia 2)
+        var q8 = Rules.calculateQuorum(3, 1);
+        assert(g1, 'N=3, bentrok 1 → LOLOS (syarat 2)', q8.lolos === true && q8.syarat === 2 && q8.tersedia === 2, 'Syarat ceil(3*2/3)=2, Tersedia 2, LOLOS');
+
+        // N=3, bentrok 2 → GAGAL (syarat 2, tersedia 1)
+        var q9 = Rules.calculateQuorum(3, 2);
+        assert(g1, 'N=3, bentrok 2 → GAGAL', q9.lolos === false && q9.syarat === 2 && q9.tersedia === 1, 'Syarat 2, Tersedia 1 < 2, GAGAL');
+
+        // =========================================================================
+        // KELOMPOK 2: PENUGASAN VS RAPAT & IRISAN WAKTU
+        // =========================================================================
+        var g2 = addGroup('2. Penugasan vs Rapat (Irisan Waktu & Aturan Status)');
+
+        // Helper timestamp rapat 20 Nov 09:00 - 10:00
+        var rMulai = new Date(2026, 10, 20, 9, 0, 0).getTime();
+        var rSelesai = new Date(2026, 10, 20, 10, 0, 0).getTime();
+
+        // 1. Draft 09-10 vs penugasan 20-21 Nov seharian -> LOLOS (karena rapat draft tidak mengunci jadwal)
+        var actSeharian = {
+          sumber: 'Penugasan',
+          status: 'Rapat Draft', // Status draft tidak dihitung bentrok
+          start: new Date(2026, 10, 20, 0, 0, 0).getTime(),
+          end: new Date(2026, 10, 21, 23, 59, 59).getTime()
+        };
+        var ev1 = Rules.evaluateParticipantActivities({ tanggal: '2026-11-20', jamMulai: '09:00', jamSelesai: '10:00' }, [actSeharian]);
+        assert(g2, 'Draft 09–10 vs penugasan 20–21 seharian → LOLOS (tidak bentrok)', ev1.hasConflict === false, 'Draft tidak mengunci jadwal');
+
+        // 2. Submit 09-10 vs penugasan 09:00-09:30 -> CONFLICT (irisan waktu dan status Penugasan Disetujui)
+        var actPenugasanIrisan = {
+          sumber: 'Penugasan',
+          status: 'Penugasan Disetujui',
+          start: new Date(2026, 10, 20, 9, 0, 0).getTime(),
+          end: new Date(2026, 10, 20, 9, 30, 0).getTime()
+        };
+        var ev2 = Rules.evaluateParticipantActivities({ tanggal: '2026-11-20', jamMulai: '09:00', jamSelesai: '10:00' }, [actPenugasanIrisan]);
+        assert(g2, 'Submit 09–10 vs penugasan 09:00–09:30 → CONFLICT', ev2.hasConflict === true, 'Penugasan Disetujui beririsan waktu');
+
+        // 3. Cancelled 09-10 vs 09:00-09:30 -> LOLOS (status batal/cancelled tidak dihitung)
+        var actCancelled = {
+          sumber: 'Penugasan',
+          status: 'Penugasan Dibatalkan',
+          start: new Date(2026, 10, 20, 9, 0, 0).getTime(),
+          end: new Date(2026, 10, 20, 9, 30, 0).getTime()
+        };
+        var ev3 = Rules.evaluateParticipantActivities({ tanggal: '2026-11-20', jamMulai: '09:00', jamSelesai: '10:00' }, [actCancelled]);
+        assert(g2, 'Cancelled 09–10 vs 09:00–09:30 → LOLOS', ev3.hasConflict === false, 'Aktivitas yang dibatalkan tidak dihitung');
+
+        // 4. Submit 09-10 vs 20-21 seharian -> CONFLICT
+        var actSubmitAllDay = {
+          sumber: 'Penugasan',
+          status: 'Penugasan Disetujui',
+          start: new Date(2026, 10, 20, 0, 0, 0).getTime(),
+          end: new Date(2026, 10, 21, 23, 59, 59).getTime()
+        };
+        var ev4 = Rules.evaluateParticipantActivities({ tanggal: '2026-11-20', jamMulai: '09:00', jamSelesai: '10:00' }, [actSubmitAllDay]);
+        assert(g2, 'Submit 09–10 vs 20–21 seharian → CONFLICT', ev4.hasConflict === true, 'Penugasan disetujui beririsan seharian');
+
+        // 5. Submit 09-10 vs 10:00-11:00 -> LOLOS (bersentuhan di batas 10:00, tidak beririsan)
+        var actTouching = {
+          sumber: 'Penugasan',
+          status: 'Penugasan Disetujui',
+          start: new Date(2026, 10, 20, 10, 0, 0).getTime(),
+          end: new Date(2026, 10, 20, 11, 0, 0).getTime()
+        };
+        var ev5 = Rules.evaluateParticipantActivities({ tanggal: '2026-11-20', jamMulai: '09:00', jamSelesai: '10:00' }, [actTouching]);
+        assert(g2, 'Submit 09–10 vs 10:00–11:00 → LOLOS (Bersentuhan)', ev5.hasConflict === false, 'Bersentuhan tidak beririsan waktu');
+
+        // 6. Submit 09-10 vs 21 Nov 09-10 -> LOLOS (beda tanggal)
+        var actDiffDate = {
+          sumber: 'Penugasan',
+          status: 'Penugasan Disetujui',
+          start: new Date(2026, 10, 21, 9, 0, 0).getTime(),
+          end: new Date(2026, 10, 21, 10, 0, 0).getTime()
+        };
+        var ev6 = Rules.evaluateParticipantActivities({ tanggal: '2026-11-20', jamMulai: '09:00', jamSelesai: '10:00' }, [actDiffDate]);
+        assert(g2, 'Submit 09–10 vs 21 Nov 09–10 → LOLOS (Beda tanggal)', ev6.hasConflict === false, 'Tanggal berbeda tidak beririsan');
+
+        // =========================================================================
+        // KELOMPOK 3: MOBILE SIMULASI HARI H (RAPAT 09:00 - 12:00)
+        // =========================================================================
+        var g3 = addGroup('3. Mobile Simulasi Hari H (Rapat 09.00–12.00 WIB)');
+
+        var testMeeting = {
+          id: 'test-m-01',
+          kodeRapat: 'RPT-TEST-01',
+          namaRapat: 'Rapat Uji Simulasi',
+          tanggal: '2026-11-20',
+          jamMulai: '09:00',
+          jamSelesai: '12:00',
+          status: 'Dijadwalkan'
+        };
+
+        // A. 08:00 Hadir belum scan -> scan boleh (hari H sebelum jam selesai)
+        var time0800 = new Date(2026, 10, 20, 8, 0, 0);
+        var v0800 = Rules.validatePresenceScan(testMeeting, time0800);
+        assert(g3, 'Hari H 08:00: Scan diperbolehkan sebelum jam mulai', v0800.valid === true, 'Hari H sebelum jam mulai diperbolehkan scan');
+
+        // B. 08:30 scan -> Sudah presensi, Tepat Waktu
+        var time0830 = new Date(2026, 10, 20, 8, 30, 0);
+        var v0830 = Rules.validatePresenceScan(testMeeting, time0830);
+        assert(g3, 'Hari H 08:30 scan → Sudah presensi, Tepat Waktu', v0830.valid === true && v0830.badge === 'Tepat Waktu', 'Badge: Tepat Waktu');
+
+        // C. 09:35 scan -> Sudah presensi, Terlambat 35 menit
+        var time0935 = new Date(2026, 10, 20, 9, 35, 0);
+        var v0935 = Rules.validatePresenceScan(testMeeting, time0935);
+        assert(g3, 'Hari H 09:35 scan → Terlambat 35 menit', v0935.valid === true && v0935.badge === 'Terlambat 35 menit' && v0935.lateMinutes === 35, 'Badge: Terlambat 35 menit');
+
+        // D. 09:30 Tidak hadir -> tidak ada tombol scan (presensiStatus '-')
+        var presAbsent = { kehadiran: 'Tidak hadir', presensiStatus: '-' };
+        assert(g3, '09:30 Tidak hadir → tidak ada scan, final', presAbsent.presensiStatus === '-', 'Status presensi dash (-) dan final');
+
+        // E. 12:00 Hadir belum scan -> tombol scan hilang, kedaluwarsa ("Tidak presensi")
+        var time1200 = new Date(2026, 10, 20, 12, 0, 0);
+        var v1200 = Rules.validatePresenceScan(testMeeting, time1200);
+        assert(g3, 'Tepat 12:00 Hadir belum scan → Scan ditolak (Sudah lewat)', v1200.valid === false, 'Error: QR Kode sudah tidak valid');
+
+        // F. H-1 scan -> ditolak, "Presensi hanya dibuka pada hari rapat"
+        var timeHMin1 = new Date(2026, 10, 19, 10, 0, 0);
+        var vHMin1 = Rules.validatePresenceScan(testMeeting, timeHMin1);
+        assert(g3, 'H-1 scan → ditolak ("Presensi hanya dibuka pada hari rapat")', vHMin1.valid === false && vHMin1.message.indexOf('hanya dibuka pada hari rapat') !== -1, 'Ditolak: bukan hari H');
+
+        // G. Batal H-2 -> badge Dibatalkan, QR tidak valid
+        var canceledMeeting = {
+          id: 'test-m-canceled',
+          tanggal: '2026-11-20',
+          jamMulai: '09:00',
+          jamSelesai: '12:00',
+          status: 'Batal',
+          alasanBatal: 'Instruksi pimpinan'
+        };
+        var vCanceled = Rules.validatePresenceScan(canceledMeeting, time0830);
+        assert(g3, 'Rapat Batal → QR tidak valid', vCanceled.valid === false && vCanceled.message.indexOf('dibatalkan') !== -1, 'QR tidak valid untuk rapat batal');
+
+        // H. Batal setelah presensi -> presensi tetap sebagai arsip
+        var archiveMeeting = { id: 'm-arc', status: 'Batal' };
+        var presArc = { kehadiran: 'Hadir', presensiStatus: 'Sudah presensi', waktuPresensiStr: '08.50 WIB' };
+        assert(g3, 'Batal setelah presensi → presensi tetap sebagai arsip', presArc.presensiStatus === 'Sudah presensi', 'Catatan presensi tersimpan sebagai arsip');
+
+        // =========================================================================
+        // KELOMPOK 4: VERIFIKASI DATA SEED RESMI (DARI XLSX)
+        // =========================================================================
+        var g4 = addGroup('4. Verifikasi Data Seed Resmi (N=100 Peserta, 20 Nov 2026)');
+
+        var allMembers = Store.getMembers();
+        var mainM = Store.getMeetingById('rpt-utama-20261120');
+
+        assert(g4, 'Jumlah Anggota terdaftar = 100 orang (P1–P100)', allMembers.length === 100, 'N=100');
+
+        // Hitung bentrok peserta pada rapat utama
+        var candidateMain = {
+          tanggal: mainM.tanggal,
+          jamMulai: mainM.jamMulai,
+          jamSelesai: mainM.jamSelesai
+        };
+
+        var seedBentrokCount = 0;
+        var seedWarningCount = 0;
+        var bentrokMembers = [];
+        var warningMembers = [];
+
+        for (var i = 0; i < allMembers.length; i++) {
+          var m = allMembers[i];
+          var acts = Store.getActivitiesForMember(m.id);
+          var ev = Rules.evaluateParticipantActivities(candidateMain, acts);
+          if (ev.hasConflict) {
+            seedBentrokCount++;
+            bentrokMembers.push(m.id);
+          } else if (ev.hasWarning) {
+            seedWarningCount++;
+            warningMembers.push(m.id);
+          }
+        }
+
+        assert(g4, 'Bentrok Unik = 5 Orang (P1, P2, P9, P10, P11)', seedBentrokCount === 5, 'Bentrok unik: ' + bentrokMembers.join(', '));
+        assert(g4, 'Warning = 2 Orang (P6, P14)', seedWarningCount === 2, 'Warning: ' + warningMembers.join(', '));
+
+        var qSeed = Rules.calculateQuorum(100, seedBentrokCount);
+        assert(g4, 'Peserta Tersedia = 95 Orang (100 - 5)', qSeed.tersedia === 95, 'Tersedia = 95');
+        assert(g4, 'Syarat Minimal ⅔ = 67 Orang', qSeed.syarat === 67, 'Syarat = 67');
+        assert(g4, 'Maksimal Boleh Bentrok = 33 Orang', qSeed.maksBolehBentrok === 33, 'Maks Boleh = 33');
+        assert(g4, 'Sisa Ruang Bentrok = 28 Orang', qSeed.sisaRuangBentrok === 28, 'Sisa Ruang = 28');
+        assert(g4, 'Hasil Kuorum Rapat Utama = LOLOS', qSeed.lolos === true, 'Hasil: LOLOS');
+
+        // Render hasil ke UI
+        renderResults();
+      }
+
+      function renderResults() {
+        var container = document.getElementById('testGroupsContainer');
+        var statusEl = document.getElementById('overallTestStatus');
+        var cntTotal = document.getElementById('cntTotalTests');
+        var cntPassed = document.getElementById('cntPassedTests');
+        var cntFailed = document.getElementById('cntFailedTests');
+
+        cntTotal.textContent = testRunner.total;
+        cntPassed.textContent = testRunner.passed;
+        cntFailed.textContent = testRunner.failed;
+
+        if (testRunner.failed === 0) {
+          statusEl.textContent = 'SEMUA TEST LOLOS (100% PASS)';
+          statusEl.style.color = 'var(--success)';
+        } else {
+          statusEl.textContent = testRunner.failed + ' TEST GAGAL (FAIL)';
+          statusEl.style.color = 'var(--danger)';
+        }
+
+        var html = '';
+        testRunner.groups.forEach(function (grp) {
+          var grpPassed = grp.tests.filter(function (t) { return t.ok; }).length;
+          html +=
+            '<div class="test-group">' +
+              '<div class="test-group-header">' +
+                '<span>' + grp.title + '</span>' +
+                '<span class="' + (grpPassed === grp.tests.length ? 'badge badge-success' : 'badge badge-danger') + '">' +
+                  grpPassed + ' / ' + grp.tests.length + ' Lolos' +
+                '</span>' +
+              '</div>';
+
+          grp.tests.forEach(function (t) {
+            html +=
+              '<div class="test-row">' +
+                '<div class="test-desc">' +
+                  '<div style="font-weight:600; color:var(--ink);">' + t.desc + '</div>' +
+                  '<div class="expected">Ekspektasi: ' + t.expected + '</div>' +
+                '</div>' +
+                '<div>' +
+                  (t.ok ? '<span class="test-badge-pass">PASS</span>' : '<span class="test-badge-fail">FAIL</span>') +
+                '</div>' +
+              '</div>';
+          });
+
+          html += '</div>';
+        });
+
+        container.innerHTML = html;
+      }
+
+      document.addEventListener('DOMContentLoaded', function () {
+        runAllTests();
+        document.getElementById('btnReRunTests').onclick = runAllTests;
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin e-Parlemen · DPRD Kota Magelang</title>
+  <link rel="stylesheet" href="css/style.css">
+  <!-- QRCode JS Library for QR Generation -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+
+  <!-- Time Simulator Bar (WIB) -->
+  <div class="time-simulator-bar" id="adminTimeBar"></div>
+
+  <div class="admin-shell">
+
+    <!-- Sidebar Admin (Sesuai Desain Tangkapan Layar Resmi) -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <span class="emblem" style="width: 32px; height: 38px;">
+          <svg viewBox="0 0 48 54" class="crest-svg" xmlns="http://www.w3.org/2000/svg">
+            <path d="M24 2 L44 9 V24 C44 37 36 47 24 52 C12 47 4 37 4 24 Z" fill="#0f2318" stroke="#e4c976" stroke-width="2"></path>
+            <path d="M24 6 L40 11.5 V24 C40 34.5 33.5 42.5 24 47 C14.5 42.5 8 34.5 8 24 V11.5 Z" fill="none" stroke="#c9a24a" stroke-width="1"></path>
+            <path d="M15 33 L19 18 L24 26 L29 18 L33 33 Z" fill="#c9a24a"></path>
+            <path d="M17 33 H31 L29 39 H19 Z" fill="#d64545"></path>
+          </svg>
+        </span>
+        <div>
+          <h1 style="font-family: Georgia, serif; font-size: 18px; color: #fff; margin:0; font-weight:700;">e-Parlemen</h1>
+          <div style="font-size: 9.5px; color: #c9a24a; letter-spacing: 1.2px; font-weight: 800; text-transform: uppercase; margin-top:2px;">ADMIN SEKRETARIAT</div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav custom-scrollbar">
+        <!-- 1. MASTER DATA -->
+        <div class="snav-label">MASTER DATA</div>
+        <a class="snav-item snav-locked" href="#" onclick="Admin.showLockedNotice('Master Periode'); return false;">
+          <svg class="ic-svg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+          <span class="snav-text">Master Periode</span>
+          <span class="snav-lock-ic">🔒</span>
+        </a>
+        <a class="snav-item snav-locked" href="#" onclick="Admin.showLockedNotice('Master Jabatan'); return false;">
+          <svg class="ic-svg" viewBox="0 0 24 24"><circle cx="12" cy="8" r="6"></circle><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"></path></svg>
+          <span class="snav-text">Master Jabatan</span>
+          <span class="snav-lock-ic">🔒</span>
+        </a>
+        <a class="snav-item snav-locked" href="#" onclick="Admin.showLockedNotice('Master Unit Type'); return false;">
+          <svg class="ic-svg" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+          <span class="snav-text">Master Unit Type</span>
+          <span class="snav-lock-ic">🔒</span>
+        </a>
+        <a class="snav-item snav-locked" href="#" onclick="Admin.showLockedNotice('Role & RBAC'); return false;">
+          <svg class="ic-svg" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+          <span class="snav-text">Role & RBAC</span>
+          <span class="snav-lock-ic">🔒</span>
+        </a>
+        <a class="snav-item snav-locked" href="#" onclick="Admin.showLockedNotice('User Management'); return false;">
+          <svg class="ic-svg" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
+          <span class="snav-text">User Management</span>
+          <span class="snav-lock-ic">🔒</span>
+        </a>
+        <a class="snav-item snav-locked" href="#" onclick="Admin.showLockedNotice('Master Dapil'); return false;">
+          <svg class="ic-svg" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+          <span class="snav-text">Master Dapil</span>
+          <span class="snav-lock-ic">🔒</span>
+        </a>
+        <a class="snav-item snav-locked" href="#" onclick="Admin.showLockedNotice('Jenis Penugasan'); return false;">
+          <svg class="ic-svg" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
+          <span class="snav-text">Jenis Penugasan</span>
+          <span class="snav-lock-ic">🔒</span>
+        </a>
+
+        <!-- 2. REPORT -->
+        <div class="snav-label">REPORT</div>
+        <a class="snav-item snav-locked" href="#" onclick="Admin.showLockedNotice('Struktur Organisasi'); return false;">
+          <svg class="ic-svg" viewBox="0 0 24 24"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
+          <span class="snav-text">Struktur Organisasi</span>
+          <span class="snav-lock-ic">🔒</span>
+        </a>
+        <a class="snav-item snav-locked" href="#" onclick="Admin.showLockedNotice('Alat Kelengkapan DPRD'); return false;">
+          <svg class="ic-svg" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+          <span class="snav-text">Alat Kelengkapan DPRD</span>
+          <span class="snav-lock-ic">🔒</span>
+        </a>
+
+        <!-- 3. PENUGASAN -->
+        <div class="snav-label">PENUGASAN</div>
+        <a class="snav-item snav-locked" href="#" onclick="Admin.showLockedNotice('Penugasan'); return false;">
+          <svg class="ic-svg" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+          <span class="snav-text">Penugasan</span>
+          <span class="snav-lock-ic">🔒</span>
+        </a>
+        <a class="snav-item snav-locked" href="#" onclick="Admin.showLockedNotice('Approval Penugasan'); return false;">
+          <svg class="ic-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="16 12 12 8 8 12"></polyline><line x1="12" y1="16" x2="12" y2="8"></line></svg>
+          <span class="snav-text">Approval Penugasan</span>
+          <span class="snav-lock-ic">🔒</span>
+        </a>
+
+        <!-- 4. PERSURATAN -->
+        <div class="snav-label">PERSURATAN</div>
+        <a class="snav-item snav-locked" href="#" onclick="Admin.showLockedNotice('Surat Masuk'); return false;">
+          <svg class="ic-svg" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+          <span class="snav-text">Surat Masuk</span>
+          <span class="snav-badge-red">3</span>
+        </a>
+        <a class="snav-item snav-locked" href="#" onclick="Admin.showLockedNotice('Surat Keluar'); return false;">
+          <svg class="ic-svg" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+          <span class="snav-text">Surat Keluar</span>
+          <span class="snav-badge-red">3</span>
+        </a>
+
+        <!-- 5. RAPAT (SATU-SATUNYA YANG AKTIF) -->
+        <div class="snav-label">RAPAT</div>
+        <a class="snav-item active" href="#" id="snavJadwalRapat" onclick="Admin.navigate('jadwal'); return false;">
+          <svg class="ic-svg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+          <span class="snav-text">Jadwal Rapat</span>
+        </a>
+
+        <!-- 6. LAINNYA -->
+        <div class="snav-label">LAINNYA</div>
+        <a class="snav-item snav-locked" href="#" onclick="Admin.showLockedNotice('Notifikasi'); return false;">
+          <svg class="ic-svg" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+          <span class="snav-text">Notifikasi</span>
+          <span class="snav-badge-red">5</span>
+        </a>
+      </nav>
+
+      <!-- Sidebar User Profile Sesuai Screenshot -->
+      <div class="sidebar-user" style="padding: 14px 16px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,0.15);">
+        <div style="background:#e5c468; color:#182a20; font-weight:800; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12.5px; flex-shrink:0;">AS</div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:700; color:#fff; font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Admin Sekretariat</div>
+          <div style="font-size:10.5px; color:#8ea293; margin-top:1px;">Sekretariat DPRD</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="admin-main" id="adminViewContainer"></main>
+
+  </div>
+
+  <script src="js/rules.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/admin.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      Admin.init();
+    });
+  </script>
+</body>
+</html>

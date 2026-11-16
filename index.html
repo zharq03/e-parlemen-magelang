@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>e-Parlemen DPRD Kota Magelang · Prototype Portal</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body style="background: var(--cream); min-height: 100vh; display: flex; flex-direction: column;">
+
+  <!-- Global Time Simulator Bar -->
+  <div class="time-simulator-bar" id="portalTimeBar"></div>
+
+  <!-- Hero Header -->
+  <header style="background: linear-gradient(180deg, var(--green-dark), var(--green)); color: #fff; padding: 36px 20px 45px; text-align: center; border-bottom: 4px solid var(--danger); position: relative;">
+    <div style="max-width: 800px; margin: 0 auto;">
+      <div style="width: 60px; height: 68px; margin: 0 auto 14px;">
+        <svg viewBox="0 0 48 54" class="crest-svg" xmlns="http://www.w3.org/2000/svg">
+          <path d="M24 2 L44 9 V24 C44 37 36 47 24 52 C12 47 4 37 4 24 Z" fill="#0f2318" stroke="#e4c976" stroke-width="2"></path>
+          <path d="M24 6 L40 11.5 V24 C40 34.5 33.5 42.5 24 47 C14.5 42.5 8 34.5 8 24 V11.5 Z" fill="none" stroke="#c9a24a" stroke-width="1"></path>
+          <path d="M15 33 L19 18 L24 26 L29 18 L33 33 Z" fill="#c9a24a"></path>
+          <path d="M17 33 H31 L29 39 H19 Z" fill="#d64545"></path>
+        </svg>
+      </div>
+      <h1 style="font-size: 28px; margin-bottom: 6px; color: #fff;">e-Parlemen DPRD Kota Magelang</h1>
+      <div style="font-size: 13px; color: var(--gold-light); font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">
+        Prototype Sistem Manajemen Jadwal & Presensi Rapat Dewan
+      </div>
+      <p style="font-size: 14px; color: #cfd8d2; margin-top: 10px; line-height: 1.6;">
+        Implementasi prototype web statis (HTML + CSS + vanilla JavaScript) berbasis aturan bisnis resmi kuorum ⅔, deteksi bentrok jadwal, sinkronisasi presensi QR real-time antar-peran, dan simulator waktu hari H.
+      </p>
+    </div>
+  </header>
+
+  <!-- Main Portal Content -->
+  <main style="flex: 1; max-width: 1050px; width: 100%; margin: -25px auto 40px; padding: 0 16px; z-index: 10;">
+
+    <!-- Control Box: Simulator Waktu & Reset Demo -->
+    <div class="card" style="box-shadow: var(--shadow-md); margin-bottom: 24px; padding: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 14px;">
+        <div>
+          <div style="font-size: 16px; font-weight: 700; color: var(--ink);">Simulator Waktu Global & Kontrol Data</div>
+          <div style="font-size: 12.5px; color: var(--muted); margin-top: 2px;">Semua logika status rapat dan jendela presensi terikat pada fungsi <code style="background:#eef0ea; padding:1px 5px; border-radius:4px;">now()</code> yang dapat di-override.</div>
+        </div>
+        <div>
+          <button type="button" class="btn btn-danger" id="btnResetDemoPortal">
+            <svg class="ic-svg" viewBox="0 0 24 24"><path d="M3 2v6h6M21 12A9 9 0 0 0 6 5.3L3 8m18 14v-6h-6M3 12a9 9 0 0 0 15 6.7l3-2.7"></path></svg>
+            Reset Data Demo (Seed Awal)
+          </button>
+        </div>
+      </div>
+
+      <div style="background: #fafaf8; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px;">
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px;">
+          <span style="font-size: 13px; font-weight: 600;">Waktu Saat Ini:</span>
+          <span id="portalDisplayTime" class="ts-now-display" style="color: var(--ink); font-size: 13px;">-</span>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <input type="date" id="pDateInput" style="padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px;">
+            <input type="time" id="pTimeInput" style="padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px;">
+            <button type="button" class="btn btn-primary btn-sm" id="btnPSetTime">Terapkan</button>
+          </div>
+        </div>
+        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+          <span style="font-size: 12px; color: var(--muted);">Preset Skenario Uji:</span>
+          <button type="button" class="ts-btn" style="color:var(--ink); background:#eee; border-color:#ccc;" data-portalpreset="2026-11-20T08:30:00">Hari H 08:30 (Mendatang / Tepat Waktu)</button>
+          <button type="button" class="ts-btn" style="color:var(--ink); background:#eee; border-color:#ccc;" data-portalpreset="2026-11-20T09:35:00">Hari H 09:35 (Berjalan / Terlambat)</button>
+          <button type="button" class="ts-btn" style="color:var(--ink); background:#eee; border-color:#ccc;" data-portalpreset="2026-11-20T12:05:00">Hari H 12:05 (Selesai / Scan Ditutup)</button>
+          <button type="button" class="ts-btn" style="color:var(--ink); background:#eee; border-color:#ccc;" data-portalpreset="2026-11-19T09:00:00">H-1 (19 Nov / Scan Belum Buka)</button>
+          <button type="button" class="ts-btn" style="color:var(--ink); background:#eee; border-color:#ccc;" id="btnPResetTime">Kembali ke Default (20 Nov 08:30)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Role Selection Cards -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 20px; margin-bottom: 24px;">
+
+      <!-- Role 1: Admin Sekretariat -->
+      <div class="card bl-success" style="display: flex; flex-direction: column; justify-content: space-between; padding: 22px;">
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <span class="badge badge-success">Aplikasi Web</span>
+            <span style="font-size: 12px; color: var(--muted); font-weight: 600;">Layar &ge; 1024px</span>
+          </div>
+          <h2 style="font-size: 20px; color: var(--ink); margin-bottom: 6px;">Web Admin Sekretariat</h2>
+          <p style="font-size: 13px; color: #4b5850; line-height: 1.5; margin-bottom: 14px;">
+            Kelola jadwal rapat, form pembuatan draf dan penjadwalan dengan verifikasi kuorum ⅔ real-time, generate QR code rapat dinamis, pantau rekap presensi anggota, batalkan rapat, serta cetak laporan rapat.
+          </p>
+          <div style="background: #f7f9f7; border: 1px solid #dbe6dd; border-radius: 6px; padding: 10px 12px; margin-bottom: 16px; font-size: 12px;">
+            <div>✓ Peran: <strong>Admin Sekretariat</strong> (Sekretariat DPRD)</div>
+            <div>✓ Validasi kuorum $N=100$, syarat 67, bentrok 5, lolos 95</div>
+            <div>✓ Pembatalan rapat dengan alasan wajib & notifikasi instan</div>
+          </div>
+        </div>
+        <div>
+          <a href="admin.html" class="btn btn-primary btn-block btn-lg">
+            Buka Web Admin &rarr;
+          </a>
+        </div>
+      </div>
+
+      <!-- Role 2: Anggota DPRD Mobile -->
+      <div class="card bl-gold" style="display: flex; flex-direction: column; justify-content: space-between; padding: 22px;">
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <span class="badge badge-gold">Aplikasi Mobile</span>
+            <span style="font-size: 12px; color: var(--muted); font-weight: 600;">Frame HP / Layar Sentuh</span>
+          </div>
+          <h2 style="font-size: 20px; color: var(--ink); margin-bottom: 6px;">Mobile Anggota DPRD</h2>
+          <p style="font-size: 13px; color: #4b5850; line-height: 1.5; margin-bottom: 14px;">
+            Aplikasi khusus anggota dewan untuk melihat agenda rapat harian & berjalan (default), konfirmasi kehadiran final (Hadir / Tidak Hadir dengan alasan wajib), serta scan QR presensi mandiri pada hari H.
+          </p>
+          <div style="background: #fdfbf7; border: 1px solid #ebd9b5; border-radius: 6px; padding: 10px 12px; margin-bottom: 16px; font-size: 12px;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span>Pilih Akun Anggota:</span>
+              <select id="portalMemberSelect" style="padding: 2px 6px; font-size: 11.5px; border-radius: 4px; border: 1px solid #ccc;">
+                <!-- Dinamis diisi JS (P1 - P100) -->
+              </select>
+            </div>
+            <div style="margin-top: 4px;">✓ Bottom Navigation 5 Menu: Beranda, Notif, Scan, Agenda, Profil</div>
+            <div>✓ Presensi mandiri: scan kamera asli atau simulasi token</div>
+          </div>
+        </div>
+        <div>
+          <a href="mobile.html" class="btn btn-gold btn-block btn-lg" id="btnOpenMobileLink">
+            Buka Mobile Anggota &rarr;
+          </a>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Showcase Seluruh Kasus Status Rapat (Siap Diuji Simultan) -->
+    <div class="card" style="box-shadow: var(--shadow-md); margin-bottom: 24px; padding: 22px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px; border-bottom:1px solid var(--border); padding-bottom:12px;">
+        <div>
+          <h2 style="font-size:18px; color:var(--ink); margin:0;">Matriks Rapat Demo Representatif (Mencakup Semua Kasus Status)</h2>
+          <div style="font-size:12.5px; color:var(--muted); margin-top:2px;">Tersedia contoh kartu untuk setiap status rapat secara simultan tanpa harus mengatur ulang simulator waktu.</div>
+        </div>
+        <span class="badge badge-success" style="font-size:11px;">Data Otomatis Tersinkronisasi</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px;">
+
+        <!-- 1. Sedang Berlangsung / Berjalan -->
+        <div style="background:#fff; border:1px solid #bce1c7; border-left:4px solid var(--success); border-radius:10px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span class="badge badge-live">Sedang Berlangsung</span>
+            <span style="font-size:11px; font-weight:700; color:var(--muted);">RPT-2026-002</span>
+          </div>
+          <div style="font-weight:700; font-size:14px; color:var(--ink); margin-bottom:4px;">Rapat Kerja Komisi I Evaluasi Pelayanan Publik</div>
+          <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">Jumat, 20 Nov 2026 · 08.00–11.00 WIB (Aktif langsung di jam default 08.30)</div>
+          <div style="font-size:11.5px; color:#234a37; background:#eaf8ef; padding:8px; border-radius:6px; margin-bottom:10px; line-height:1.4;">
+            ✓ <strong>Fitur Uji:</strong> Dapat dibatalkan langsung oleh Admin via tombol <em>"Batalkan Rapat"</em> di Web Admin. Di Mobile langsung tampil di tab default <em>"Berjalan"</em>.
+          </div>
+          <div style="display:flex; gap:6px;">
+            <a href="admin.html" class="btn btn-primary btn-sm" style="flex:1; font-size:11.5px;">Buka di Web Admin &rsaquo;</a>
+            <a href="mobile.html" class="btn btn-secondary btn-sm" style="flex:1; font-size:11.5px;">Buka di Mobile &rsaquo;</a>
+          </div>
+        </div>
+
+        <!-- 2. Dibatalkan Saat Sedang Berlangsung (Arsip Presensi QR Sah) -->
+        <div style="background:#fff; border:1px solid #fecaca; border-left:4px solid var(--danger); border-radius:10px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span class="badge badge-danger">Dibatalkan</span>
+            <span style="font-size:11px; font-weight:700; color:var(--muted);">RPT-2026-007</span>
+          </div>
+          <div style="font-weight:700; font-size:14px; color:var(--ink); margin-bottom:4px;">Rapat Kerja Komisi II (Dibatalkan Saat Sidang Berjalan)</div>
+          <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">Jumat, 20 Nov 2026 · 08.00–10.30 WIB (Dibatalkan pukul 08.20 WIB)</div>
+          <div style="font-size:11.5px; color:#7f1d1d; background:#fef2f2; padding:8px; border-radius:6px; margin-bottom:10px; line-height:1.4;">
+            ✓ <strong>Fitur Uji:</strong> Status tetap <em>"Dibatalkan"</em>. Anggota telah hadir dan scan QR pukul 08.12 WIB. Saat klik <strong>Lihat Detail</strong> atau <strong>Rekap Presensi</strong>, data presensi QR seluruh anggota tetap sah tersimpan!
+          </div>
+          <div style="display:flex; gap:6px;">
+            <a href="admin.html" class="btn btn-primary btn-sm" style="flex:1; font-size:11.5px;">Buka di Web Admin &rsaquo;</a>
+            <a href="mobile.html" class="btn btn-secondary btn-sm" style="flex:1; font-size:11.5px;">Buka di Mobile &rsaquo;</a>
+          </div>
+        </div>
+
+        <!-- 3. Rapat Mendatang -->
+        <div style="background:#fff; border:1px solid #bce1f5; border-left:4px solid var(--info); border-radius:10px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span class="badge badge-info">Mendatang</span>
+            <span style="font-size:11px; font-weight:700; color:var(--muted);">RPT-2026-001</span>
+          </div>
+          <div style="font-weight:700; font-size:14px; color:var(--ink); margin-bottom:4px;">Rapat Paripurna KUA-PPAS TA 2027</div>
+          <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">Jumat, 20 Nov 2026 · 09.00–12.00 WIB (Syarat Kuorum 67, Lolos 95)</div>
+          <div style="font-size:11.5px; color:#1e40af; background:#eff6ff; padding:8px; border-radius:6px; margin-bottom:10px; line-height:1.4;">
+            ✓ <strong>Fitur Uji:</strong> Menguji rumus kuorum ⅔ ($N=100$), jendela presensi hari H sebelum mulai, dan konfirmasi kehadiran Hadir / Tidak Hadir.
+          </div>
+          <div style="display:flex; gap:6px;">
+            <a href="admin.html" class="btn btn-primary btn-sm" style="flex:1; font-size:11.5px;">Buka di Web Admin &rsaquo;</a>
+            <a href="mobile.html" class="btn btn-secondary btn-sm" style="flex:1; font-size:11.5px;">Buka di Mobile &rsaquo;</a>
+          </div>
+        </div>
+
+        <!-- 4. Rapat Selesai -->
+        <div style="background:#fff; border:1px solid #d1d5db; border-left:4px solid var(--muted); border-radius:10px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span class="badge badge-neutral">Selesai</span>
+            <span style="font-size:11px; font-weight:700; color:var(--muted);">RPT-2026-004</span>
+          </div>
+          <div style="font-weight:700; font-size:14px; color:var(--ink); margin-bottom:4px;">Rapat Badan Musyawarah Penetapan Masa Sidang</div>
+          <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">Rabu, 18 Nov 2026 · 09.00–11.30 WIB</div>
+          <div style="font-size:11.5px; color:#374151; background:#f3f4f6; padding:8px; border-radius:6px; margin-bottom:10px; line-height:1.4;">
+            ✓ <strong>Fitur Uji:</strong> Tampil di tab <em>Selesai</em> dengan tombol <strong>"Laporan Rapat"</strong>, notula pembahasan, dan rekapitulasi kehadiran anggota.
+          </div>
+          <div style="display:flex; gap:6px;">
+            <a href="admin.html" class="btn btn-primary btn-sm" style="flex:1; font-size:11.5px;">Buka di Web Admin &rsaquo;</a>
+            <a href="mobile.html" class="btn btn-secondary btn-sm" style="flex:1; font-size:11.5px;">Buka di Mobile &rsaquo;</a>
+          </div>
+        </div>
+
+        <!-- 5. Dibatalkan Sebelum Mulai -->
+        <div style="background:#fff; border:1px solid #fecaca; border-left:4px solid var(--danger); border-radius:10px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span class="badge badge-danger">Dibatalkan</span>
+            <span style="font-size:11px; font-weight:700; color:var(--muted);">RPT-2026-005</span>
+          </div>
+          <div style="font-weight:700; font-size:14px; color:var(--ink); margin-bottom:4px;">Rapat Koordinasi Pansus Raperda RTRW</div>
+          <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">Minggu, 15 Nov 2026 · Dibatalkan H-1 sebelum mulai</div>
+          <div style="font-size:11.5px; color:#7f1d1d; background:#fef2f2; padding:8px; border-radius:6px; margin-bottom:10px; line-height:1.4;">
+            ✓ <strong>Fitur Uji:</strong> Rapat dibatalkan sebelum jadwal dimulai. Alasan pembatalan dan arsip kode terkunci.
+          </div>
+          <div style="display:flex; gap:6px;">
+            <a href="admin.html" class="btn btn-primary btn-sm" style="flex:1; font-size:11.5px;">Buka di Web Admin &rsaquo;</a>
+            <a href="mobile.html" class="btn btn-secondary btn-sm" style="flex:1; font-size:11.5px;">Buka di Mobile &rsaquo;</a>
+          </div>
+        </div>
+
+        <!-- 6. Draf Rapat -->
+        <div style="background:#fff; border:1px solid #fef08a; border-left:4px solid #eab308; border-radius:10px; padding:14px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span class="badge" style="background:#fef9c3; color:#854d0e;">Draft</span>
+            <span style="font-size:11px; font-weight:700; color:var(--muted);">RPT-2026-006</span>
+          </div>
+          <div style="font-weight:700; font-size:14px; color:var(--ink); margin-bottom:4px;">Draf Rapat Kerja Komisi II Pengelolaan Sampah</div>
+          <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">Rencana: 25 Nov 2026 · Belum dijadwalkan</div>
+          <div style="font-size:11.5px; color:#854d0e; background:#fefce8; padding:8px; border-radius:6px; margin-bottom:10px; line-height:1.4;">
+            ✓ <strong>Fitur Uji:</strong> Disimpan tanpa validasi kuorum. Evaluasi kuorum ⅔ baru dihitung saat menekan <em>"Jadwalkan Rapat"</em>.
+          </div>
+          <div style="display:flex; gap:6px;">
+            <a href="admin.html" class="btn btn-primary btn-sm" style="flex:1; font-size:11.5px;">Lanjutkan di Web Admin &rsaquo;</a>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Test Suite Link & Seed Summary -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 20px;">
+
+      <!-- Automated Test Suite Card -->
+      <div class="card bl-info" style="padding: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <h3 style="font-size: 16px; color: var(--ink);">Automated Test Suite (Mandiri)</h3>
+          <span class="badge badge-info">100% Assertion</span>
+        </div>
+        <p style="font-size: 13px; color: #4b5850; line-height: 1.5; margin-bottom: 12px;">
+          Uji otomatis untuk seluruh skenario yang diwajibkan: kuorum ⅔ matematika, irisan waktu penugasan vs rapat, kondisi scan mobile hari H (tepat waktu, terlambat, kedaluwarsa, ditolak H-1), dan verifikasi seed 100 anggota.
+        </p>
+        <a href="test.html" class="btn btn-secondary btn-block">
+          Jalankan Test Suite (test.html) &rarr;
+        </a>
+      </div>
+
+      <!-- Ringkasan Aturan Bisnis & Seed Data -->
+      <div class="card" style="padding: 20px;">
+        <h3 style="font-size: 16px; color: var(--ink); margin-bottom: 8px;">Ringkasan Data Seed Rapat Utama</h3>
+        <div style="font-size: 12.5px; line-height: 1.6; color: #3b4640;">
+          <div>• <strong>Jadwal:</strong> Jumat, 20 November 2026, 09.00–12.00 WIB</div>
+          <div>• <strong>Peserta ($N$):</strong> 100 Anggota (P1 s.d. P100)</div>
+          <div>• <strong>Syarat ⅔ Kuorum:</strong> $\lceil 100 \times \frac{2}{3} \rceil = \mathbf{67}$ Orang</div>
+          <div>• <strong>Bentrok Unik:</strong> 5 Orang (P1, P2 penugasan; P9, P10, P11 rapat lain)</div>
+          <div>• <strong>Tersedia:</strong> $100 - 5 = \mathbf{95}$ Orang (&ge; 67 &rarr; <span class="badge badge-success" style="font-size:10px;">LOLOS</span>)</div>
+          <div>• <strong>Ruang Bentrok Tersisa:</strong> $95 - 67 = \mathbf{28}$ Orang</div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer style="background: var(--green-dark); color: #a4b3aa; text-align: center; padding: 20px 16px; font-size: 12px; border-top: 1px solid rgba(201, 162, 74, 0.3);">
+    <div>DPRD Kota Magelang · Sistem Informasi e-Parlemen (Prototype Statis)</div>
+    <div style="margin-top: 4px; font-size: 11px; color: #76877c;">Dibuat untuk evaluasi prototype siap deploy Vercel tanpa dependensi backend.</div>
+  </footer>
+
+  <script src="js/rules.js"></script>
+  <script src="js/store.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      function updatePortalTime() {
+        var now = Store.now();
+        var ymd = Rules.formatDateYMD(now);
+        var h = String(now.getHours()).padStart(2, '0');
+        var m = String(now.getMinutes()).padStart(2, '0');
+        var str = Rules.formatDateIndo(now) + ', ' + Rules.formatTimeWIB(now);
+
+        var disp = document.getElementById('portalDisplayTime');
+        if (disp) disp.textContent = str;
+
+        var dIn = document.getElementById('pDateInput');
+        if (dIn) dIn.value = ymd;
+        var tIn = document.getElementById('pTimeInput');
+        if (tIn) tIn.value = h + ':' + m;
+
+        // Header time bar
+        var bar = document.getElementById('portalTimeBar');
+        if (bar) {
+          bar.innerHTML =
+            '<div class="ts-title">' +
+              '<svg class="ic-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>' +
+              '<span>Waktu Aktif Simulasi: ' + str + '</span>' +
+            '</div>' +
+            '<div style="font-size:11px; color:var(--gold-light);">Status Rapat & Jendela Scan Otomatis Menyesuaikan</div>';
+        }
+      }
+
+      updatePortalTime();
+
+      // Reset Demo Data
+      document.getElementById('btnResetDemoPortal').onclick = function () {
+        if (confirm('Apakah Anda yakin ingin mereset seluruh data ke kondisi awal seed (100 anggota, rapat utama 20 Nov 2026)?')) {
+          Store.seedData(true);
+          updatePortalTime();
+          alert('Data demo berhasil direset ke kondisi awal!');
+        }
+      };
+
+      // Set Time Controls
+      document.getElementById('btnPSetTime').onclick = function () {
+        var d = document.getElementById('pDateInput').value;
+        var t = document.getElementById('pTimeInput').value;
+        if (d && t) {
+          Store.setTime(d + 'T' + t + ':00');
+          updatePortalTime();
+          alert('Waktu simulasi disetel ke: ' + Rules.formatDateIndo(new Date(d)) + ' pukul ' + t + ' WIB');
+        }
+      };
+
+      document.getElementById('btnPResetTime').onclick = function () {
+        Store.resetTime();
+        updatePortalTime();
+        alert('Waktu direset ke 20 Nov 2026 08:30 WIB');
+      };
+
+      document.querySelectorAll('[data-portalpreset]').forEach(function (btn) {
+        btn.onclick = function () {
+          var iso = btn.getAttribute('data-portalpreset');
+          Store.setTime(iso);
+          updatePortalTime();
+          alert('Waktu disetel: ' + btn.textContent);
+        };
+      });
+
+      // Member Selector for Mobile Launch (Kurasi Skenario Demo Ringkas & Padat)
+      var mSelect = document.getElementById('portalMemberSelect');
+      var curated = Store.getCuratedDemoMembers();
+      var curId = Store.getCurrentMemberId();
+
+      var optGroupCurated = document.createElement('optgroup');
+      optGroupCurated.label = 'Skenario Demo Utama (P1 - P10 Kasus Representatif)';
+
+      curated.forEach(function (c) {
+        var m = Store.getMemberById(c.id);
+        if (m) {
+          var opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = m.id + ' — ' + m.nama + ' (' + c.tag + ')';
+          if (m.id === curId) opt.selected = true;
+          optGroupCurated.appendChild(opt);
+        }
+      });
+      mSelect.appendChild(optGroupCurated);
+
+      mSelect.onchange = function () {
+        Store.setCurrentMemberId(mSelect.value);
+      };
+
+      // Listen to cross-tab updates
+      window.addEventListener('epar-store-changed', updatePortalTime);
+    });
+  </script>
+</body>
+</html>
