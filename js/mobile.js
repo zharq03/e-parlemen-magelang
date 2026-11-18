@@ -1,11 +1,12 @@
 /**
- * mobile.js - Controller Mobile Anggota DPRD e-Parlemen (Revisi Template & UX)
- * Mengikuti template acuan reference/*.html secara presisi:
- * - Tanpa tombol Tambah ke Kalender
- * - Selector pengguna dipadatkan (8 profil skenario demo representatif)
- * - Tampilan Dokumen Surat Undangan resmi (bisa dibuka/dilihat)
- * - Header Watermark & Wave Merah
- * - Konfirmasi Kehadiran Final & Scan QR Mandiri
+ * mobile.js - Controller Mobile Anggota DPRD e-Parlemen
+ * Menyesuaikan Dokumen TRD & API Specification v1.1:
+ * - Tab Default: BERLANGSUNG
+ * - State Machine & Real-Time Computed display_status
+ * - Konfirmasi Kehadiran One-Way & Alasan Tidak Hadir Wajib
+ * - Scan QR Presensi Hari-H (Boleh scan sebelum jam mulai)
+ * - Punctuality Tracking: Tepat Waktu vs Terlambat X Menit
+ * - Formatted Notification Feed dengan body_segments JSONB
  */
 
 (function (window) {
@@ -14,7 +15,7 @@
   var Mobile = {};
 
   var activeTab = 'agenda';
-  var agendaFilterTab = 'Berjalan'; // DEFAULT tab Berjalan
+  var agendaFilterTab = 'Berjalan'; // DEFAULT tab Berjalan (BERLANGSUNG) TRD v1.1 Hal 17
   var activeMeetingDetailId = null;
   var scanSubTab = 'scan';
 
@@ -67,7 +68,7 @@
       '<button type="button" class="ts-btn" data-mobpreset="2026-11-20T08:30:00">08:30 (Berlangsung)</button>' +
       '<button type="button" class="ts-btn" data-mobpreset="2026-11-20T09:30:00">09:30 (Berjalan)</button>' +
       '<button type="button" class="ts-btn" data-mobpreset="2026-11-20T12:05:00">12:05 (Selesai)</button>' +
-      '<button type="button" class="ts-btn" data-mobpreset="2026-11-19T09:00:00">19 Nov (H-1)</button>' +
+      '<button type="button" class="ts-btn" data-mobpreset="2026-11-19T08:00:00">19 Nov (H-1)</button>' +
       '<button type="button" class="ts-btn" id="btnMobReset">Reset</button>' +
       '</div>' +
       '</div>';
@@ -101,7 +102,7 @@
   };
 
   /**
-   * Header Profil User dengan Selector Padat (8 Skenario Demo Utama)
+   * Header Profil User dengan Selector 10 Akun Demo Terkurasi
    */
   Mobile.renderHeaderUser = function () {
     var pill = document.getElementById('mobHeaderUserPill');
@@ -201,8 +202,8 @@
     });
 
     var nextMeetings = allMeetings.filter(function (m) {
-      var der = Rules.deriveMeetingStatus(m, now);
-      return m.status !== 'Draft' && m.status !== 'Batal' && (der === 'Berjalan' || der === 'Mendatang') && (m.peserta || []).indexOf(curMember.id) !== -1;
+      var der = Rules.deriveDisplayStatus(m, now);
+      return m.status !== 'Draft' && m.status !== 'Batal' && (der === 'BERLANGSUNG' || der === 'DIJADWALKAN') && (m.peserta || []).indexOf(curMember.id) !== -1;
     });
     nextMeetings.sort(function (a, b) {
       return a.tanggal.localeCompare(b.tanggal) || a.jamMulai.localeCompare(b.jamMulai);
@@ -251,8 +252,8 @@
         '<div class="meeting-card bl-success" onclick="Mobile.openMeetingDetail(\'' + nextM.id + '\')">' +
         '<div class="mc-header">' +
         '<div>' +
-        '<span class="badge ' + (Rules.deriveMeetingStatus(nextM, now) === 'Berjalan' ? 'badge-live' : 'badge-info') + '">' +
-        Rules.deriveMeetingStatus(nextM, now) +
+        '<span class="badge ' + (Rules.deriveDisplayStatus(nextM, now) === 'BERLANGSUNG' ? 'badge-live' : 'badge-info') + '">' +
+        (Rules.deriveDisplayStatus(nextM, now) === 'BERLANGSUNG' ? 'Sedang Berjalan' : 'Mendatang') +
         '</span>' +
         '<div class="mc-title" style="margin-top:6px;">' + nextM.namaRapat + '</div>' +
         '</div>' +
@@ -274,7 +275,7 @@
   };
 
   /* ==========================================================================
-     MENU 2: NOTIFIKASI
+     MENU 2: NOTIFIKASI DENGAN BODY_SEGMENTS FORMAT (TRD v1.1 Hal 18-19)
      ========================================================================== */
   Mobile.renderNotifikasi = function (container, filterCat) {
     container = container || document.getElementById('mobileMainContent');
@@ -305,14 +306,30 @@
     } else {
       notifs.forEach(function (n) {
         var isRead = n.readBy.indexOf(curId) !== -1;
-        var borderCls = n.type === 'rapat_dibatalkan' ? 'bl-danger' : (n.type === 'rapat_dijadwalkan' ? 'bl-success' : 'bl-gold');
+        var borderCls = (n.event_type === 'MEETING_CANCELLED' || n.type === 'rapat_dibatalkan')
+          ? 'bl-danger'
+          : ((n.event_type === 'MEETING_SCHEDULED' || n.type === 'rapat_dijadwalkan') ? 'bl-success' : 'bl-gold');
+
+        // Render Segments JSONB jika tersedia
+        var formattedMsg = '';
+        if (n.body_segments && n.body_segments.length) {
+          formattedMsg = n.body_segments.map(function (seg) {
+            if (seg.style === 'HIGHLIGHT') {
+              return '<strong style="color:var(--green-dark);">' + seg.text + '</strong>';
+            }
+            return seg.text;
+          }).join('');
+        } else {
+          formattedMsg = n.message || '';
+        }
+
         html +=
           '<div class="card ' + borderCls + '" style="' + (isRead ? 'opacity:0.8;' : 'background:#fff;') + ' margin-bottom:10px;">' +
           '<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">' +
           '<div style="font-weight:700; font-size:13.5px; color:var(--ink);">' + n.title + '</div>' +
           (!isRead ? '<span class="badge badge-today" style="font-size:9.5px;">Baru</span>' : '') +
           '</div>' +
-          '<div style="font-size:12.5px; color:#49564f; margin-top:4px;">' + n.message + '</div>' +
+          '<div style="font-size:12.5px; color:#49564f; margin-top:4px;">' + formattedMsg + '</div>' +
           '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:11px; color:var(--muted);">' +
           '<span>' + n.dateStr + '</span>' +
           (n.meetingId ? '<a href="#" style="color:var(--green); font-weight:600;" onclick="Mobile.openMeetingDetail(\'' + n.meetingId + '\'); return false;">Lihat Rapat &rsaquo;</a>' : '') +
@@ -332,7 +349,7 @@
   };
 
   /* ==========================================================================
-     MENU 3: SCAN QR
+     MENU 3: SCAN QR PRESENSI
      ========================================================================== */
   Mobile.renderScanScreen = function (container) {
     container = container || document.getElementById('mobileMainContent');
@@ -392,7 +409,7 @@
 
         '<div class="card">' +
         '<div style="font-weight:700; font-size:14px; margin-bottom:6px;">Arahkan Kamera ke QR Rapat</div>' +
-        '<div style="font-size:12px; color:var(--muted); margin-bottom:12px;">Presensi dibuka sejak pukul 00.00 WIB hari H hingga jam rapat selesai.</div>' +
+        '<div style="font-size:12px; color:var(--muted); margin-bottom:12px;">Presensi dibuka pada hari rapat (diperbolehkan sebelum jam mulai) hingga jam rapat selesai.</div>' +
 
         '<div style="background:#f7f6f2; border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px; margin-bottom:12px;">' +
         '<div style="font-weight:700; font-size:12.5px; color:var(--ink); margin-bottom:6px;">Simulasi Scan Presensi:</div>' +
@@ -436,8 +453,8 @@
 
     if (recordResult.success) {
       var msg = recordResult.badge === 'Tepat Waktu'
-        ? 'Selamat! Anda sudah presensi tepat waktu pukul ' + recordResult.timeStr
-        : 'Anda berhasil presensi rapat pukul ' + recordResult.timeStr + ' (' + recordResult.badge + ')';
+        ? 'Selamat Anda Sudah Presensi Tepat Waktu (Pukul ' + recordResult.timeStr + ')'
+        : 'Presensi berhasil (Pukul ' + recordResult.timeStr + ' - ' + recordResult.badge + ')';
 
       Mobile.showScanModal(
         'Presensi Berhasil',
@@ -466,7 +483,7 @@
   };
 
   /* ==========================================================================
-     MENU 4: AGENDA (JADWAL RAPAT - TAB BERJALAN DEFAULT)
+     MENU 4: AGENDA (DEFAULT TAB: BERJALAN / BERLANGSUNG - TRD v1.1 Hal 17)
      ========================================================================== */
   Mobile.renderAgendaScreen = function (container) {
     container = container || document.getElementById('mobileMainContent');
@@ -486,10 +503,10 @@
 
     var countBerjalan = 0, countMendatang = 0, countSelesai = 0, countDibatalkan = 0;
     myMeetings.forEach(function (m) {
-      var d = Rules.deriveMeetingStatus(m, now);
-      if (m.status === 'Batal') countDibatalkan++;
-      else if (d === 'Berjalan') countBerjalan++;
-      else if (d === 'Selesai') countSelesai++;
+      var d = Rules.deriveDisplayStatus(m, now);
+      if (m.status === 'Batal' || d === 'BATAL') countDibatalkan++;
+      else if (d === 'BERLANGSUNG') countBerjalan++;
+      else if (d === 'SELESAI') countSelesai++;
       else countMendatang++;
     });
 
@@ -504,7 +521,7 @@
       '</div>' +
       '</div>' +
 
-      // Tab Berjalan (DEFAULT)
+      // Tab Berjalan (DEFAULT TRD v1.1 Hal 17)
       '<div class="mobile-tabs">' +
       [
         { id: 'Berjalan', label: 'Berjalan (' + countBerjalan + ')' },
@@ -569,16 +586,16 @@
       if (m.status === 'Draft') return false; // Draft tidak pernah tampil di mobile!
       if ((m.peserta || []).indexOf(curMember.id) === -1) return false;
 
-      var derived = Rules.deriveMeetingStatus(m, now);
+      var derived = Rules.deriveDisplayStatus(m, now);
 
       if (agendaFilterTab === 'Mendatang') {
-        if (derived !== 'Mendatang') return false;
+        if (derived !== 'DIJADWALKAN') return false;
       } else if (agendaFilterTab === 'Berjalan') {
-        if (derived !== 'Berjalan') return false;
+        if (derived !== 'BERLANGSUNG') return false;
       } else if (agendaFilterTab === 'Selesai') {
-        if (derived !== 'Selesai') return false;
+        if (derived !== 'SELESAI') return false;
       } else if (agendaFilterTab === 'Dibatalkan') {
-        if (m.status !== 'Batal') return false;
+        if (m.status !== 'Batal' && derived !== 'BATAL') return false;
       }
 
       if (startDate && m.tanggal < startDate) return false;
@@ -602,17 +619,19 @@
 
     var html = '';
     filtered.forEach(function (m) {
-      var derived = Rules.deriveMeetingStatus(m, now);
+      var derived = Rules.deriveDisplayStatus(m, now);
       var isToday = (m.tanggal === Rules.formatDateYMD(now));
 
-      var borderCls = m.status === 'Batal' ? 'bl-danger' : (derived === 'Berjalan' ? 'bl-success' : (isToday ? 'bl-danger' : 'bl-gold'));
+      var borderCls = (m.status === 'Batal' || derived === 'BATAL')
+        ? 'bl-danger'
+        : (derived === 'BERLANGSUNG' ? 'bl-success' : (isToday ? 'bl-danger' : 'bl-gold'));
 
       var badgeHtml = '';
-      if (m.status === 'Batal') {
+      if (m.status === 'Batal' || derived === 'BATAL') {
         badgeHtml = '<span class="badge badge-danger">Dibatalkan</span>';
-      } else if (derived === 'Berjalan') {
+      } else if (derived === 'BERLANGSUNG') {
         badgeHtml = '<span class="badge badge-live">Sedang Berjalan</span>';
-      } else if (derived === 'Selesai') {
+      } else if (derived === 'SELESAI') {
         badgeHtml = '<span class="badge badge-neutral">Selesai</span>';
       } else {
         badgeHtml = '<span class="badge badge-info">Mendatang</span>';
@@ -675,10 +694,7 @@
   };
 
   /* ==========================================================================
-     LAYAR DETAIL UNDANGAN (PERSIS TEMPLATE ACUAN)
-     - Dilengkapi Lihat Dokumen Undangan
-     - Tanpa Tambah ke Kalender
-     - Konfirmasi Kehadiran & Tombol Scan Presensi
+     LAYAR DETAIL UNDANGAN (TRD v1.1 Hal 17: Konfirmasi & Scan QR Flags)
      ========================================================================== */
   Mobile.openMeetingDetail = function (meetingId) {
     activeMeetingDetailId = meetingId;
@@ -697,35 +713,11 @@
 
     var curMember = Store.getMemberById(Store.getCurrentMemberId());
     var now = Store.now();
-    var derived = Rules.deriveMeetingStatus(meeting, now);
-
-    var isBatal = (meeting.status === 'Batal');
-    var isSelesai = (meeting.status === 'Selesai' || derived === 'Selesai');
-    var isDijadwalkan = !isBatal && !isSelesai;
-
     var pres = Store.getPresence(meeting.id, curMember.id);
-    var isToday = (meeting.tanggal === Rules.formatDateYMD(now));
+    var flags = Rules.getActionFlags(meeting, now, pres);
 
-    var canScan = false;
-    var scanDisabledReason = '';
-
-    if (pres.kehadiran === 'Hadir' && isDijadwalkan) {
-      if (!isToday) {
-        canScan = false;
-        scanDisabledReason = 'Presensi hanya dibuka pada hari rapat (' + Rules.formatDateIndo(new Date(meeting.tanggal)) + ')';
-      } else {
-        var endMs = Rules.parseDateTime(meeting.tanggal, meeting.jamSelesai);
-        if (now.getTime() >= endMs) {
-          canScan = false;
-          scanDisabledReason = 'Jendela presensi telah ditutup (jam selesai terlewati).';
-        } else if (pres.presensiStatus === 'Sudah presensi') {
-          canScan = false;
-          scanDisabledReason = 'Anda sudah presensi pada pukul ' + pres.waktuPresensiStr;
-        } else {
-          canScan = true;
-        }
-      }
-    }
+    var isBatal = (meeting.status === 'Batal' || flags.display_status === 'BATAL');
+    var isSelesai = (meeting.status === 'Selesai' || flags.display_status === 'SELESAI');
 
     var statusBadge = '';
     if (isBatal) statusBadge = '<span class="badge badge-danger">Dibatalkan</span>';
@@ -745,7 +737,7 @@
       '</button>' +
       '</div>' +
 
-      // CARD 1: IDENTITAS UNDANGAN (PERSIS TEMPLATE)
+      // CARD 1: IDENTITAS UNDANGAN
       '<div class="card">' +
       '<div style="display:flex; justify-content:space-between; align-items:flex-start;">' +
       '<span class="badge badge-danger">UNDANGAN RAPAT</span>' +
@@ -758,7 +750,7 @@
       '<div class="kv-row"><span class="k">Waktu</span><span class="v">' + meeting.jamMulai + ' – ' + meeting.jamSelesai + ' WIB</span></div>' +
       '<div class="kv-row"><span class="k">Tempat</span><span class="v">' + (meeting.lokasi || 'DPRD Kota Magelang') + '</span></div>' +
       '<div class="kv-row"><span class="k">Pemrakarsa</span><span class="v">' + ((meeting.unit && meeting.unit.length) ? meeting.unit.join(', ') : 'Sekretariat DPRD') + '</span></div>' +
-      '<div class="kv-row"><span class="k">Tingkat</span><span class="v"><span class="badge badge-neutral">' + meeting.jenisRapat + '</span></span></div>' +
+      '<div class="kv-row"><span class="k">Tingkat / Jenis</span><span class="v"><span class="badge badge-neutral">' + meeting.jenisRapat + '</span></span></div>' +
       '</div>' +
 
       // CARD 2: AGENDA RAPAT
@@ -767,7 +759,7 @@
       '<div class="hint">' + (meeting.deskripsi || 'Pembahasan agenda dan program kerja bersama instansi terkait.') + '</div>' +
       '</div>' +
 
-      // CARD 3: DOKUMEN SURAT UNDANGAN RESMI (FIELD UNTUK LIHAT DOKUMEN UNDANGAN)
+      // CARD 3: DOKUMEN SURAT UNDANGAN RESMI
       '<div class="card">' +
       '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">' +
       '<h3 class="ctitle" style="margin-bottom:0;">Dokumen Undangan</h3>' +
@@ -786,7 +778,7 @@
       '</button>' +
       '</div>' +
 
-      // CARD 4: DAFTAR PESERTA (STATS GRID TEMPLATE PERSIS)
+      // CARD 4: DAFTAR PESERTA
       '<div class="card">' +
       '<h3 class="ctitle">Daftar Peserta (' + (meeting.peserta ? meeting.peserta.length : 0) + ')</h3>' +
       '<div class="stats-grid">' +
@@ -797,32 +789,29 @@
       '</div>' +
       '</div>' +
 
-      // KONDISI RAPAT DIBATALKAN
+      // KONDISI RAPAT DIBATALKAN (TRD v1.1 Hal 17: cancel_reason & read-only)
       (isBatal ?
         '<div class="card bl-danger" style="background:#fdf2f2; border-color:#f5c6c6;">' +
         '<div style="font-weight:700; color:var(--danger); font-size:14px;">Rapat Telah Dibatalkan</div>' +
-        '<div style="font-size:12.5px; color:var(--ink); margin-top:4px;">Alasan: <strong>' + (meeting.alasanBatal || '-') + '</strong></div>' +
-        '<div style="font-size:11px; color:var(--muted); margin-top:6px;">Dibatalkan oleh ' + (meeting.dibatalkanOleh || 'Admin Sekretariat') + ' · ' + (meeting.dibatalkanPada || '-') + '</div>' +
+        '<div style="font-size:12.5px; color:var(--ink); margin-top:4px;">Alasan: <strong>' + (meeting.cancel_reason || meeting.alasanBatal || '-') + '</strong></div>' +
+        '<div style="font-size:11px; color:var(--muted); margin-top:6px;">Dibatalkan oleh ' + (meeting.cancelled_by || meeting.dibatalkanOleh || 'Admin Sekretariat') + ' · ' + (meeting.cancelled_at || meeting.dibatalkanPada || '-') + '</div>' +
         (meeting.isBatalSaatBerlangsung && pres.presensiStatus === 'Sudah presensi' ?
           '<div style="background:#eaf8ef; border:1px solid #bce1c7; padding:10px 12px; border-radius:8px; margin-top:10px; font-size:12px; color:var(--success); font-weight:700;">' +
           '✓ Anda sudah presensi pada pukul ' + pres.waktuPresensiStr + ' (' + (pres.badge || 'Tepat Waktu') + '). Data presensi Anda tetap tercatat sah sebagai arsip resmi meskipun rapat dihentikan darurat.' +
           '</div>' : '') +
-        (meeting.isBatalSaatBerlangsung ?
-          '<div style="background:#fff; border:1px solid #fae1af; border-radius:8px; padding:10px 12px; margin-top:10px; font-size:11.5px;">' +
-          '<div style="font-weight:700; color:#8c6a28; margin-bottom:4px;">Rekap Presensi Sebelum Pembatalan:</div>' +
-          '<div style="color:var(--ink);">Seluruh anggota yang telah melakukan scan presensi sebelum pembatalan (25 anggota) tetap tercatat sah dan masuk ke dalam arsip rekapitulasi kehadiran dewan.</div>' +
-          '</div>' : '') +
-        '<div style="font-size:11.5px; color:var(--muted); margin-top:8px; font-style:italic;">Tombol konfirmasi dan scan presensi dinonaktifkan.</div>' +
+        '<div style="font-size:11.5px; color:var(--muted); margin-top:8px; font-style:italic;">Tombol konfirmasi dan scan presensi dinonaktifkan (Read-only).</div>' +
         '</div>' : '') +
 
-      // CARD 5: KONFIRMASI KEHADIRAN (HANYA DUA NILAI: HADIR & TIDAK HADIR)
-      (isDijadwalkan ?
+      // CARD 5: KONFIRMASI KEHADIRAN & SCAN QR (TRD v1.1 Hal 11-12)
+      (!isBatal && !isSelesai ?
         '<div class="card" id="confirmCard">' +
-        '<h3 class="ctitle">Konfirmasi Kehadiran</h3>' +
-        '<div class="hint" style="margin-bottom:10px; color:var(--danger);">Batas konfirmasi: 20 November 2026, 09.00 WIB</div>' +
+        '<h3 class="ctitle">Konfirmasi Kehadiran &amp; Presensi</h3>' +
+        '<div class="hint" style="margin-bottom:10px; color:var(--danger);">Batas konfirmasi: Sebelum jam rapat selesai (' + meeting.jamSelesai + ' WIB)</div>' +
 
-        (pres.kehadiran === 'Belum konfirmasi' ?
+        // Lapis 1: Konfirmasi Kehadiran
+        (flags.can_confirm ?
           '<div>' +
+          '<div style="font-size:12.5px; color:var(--muted); margin-bottom:8px;">Silakan tentukan konfirmasi kehadiran Anda (One-way, final):</div>' +
           '<div style="display:flex; gap:10px;">' +
           '<button type="button" class="btn btn-primary" style="flex:1;" onclick="Mobile.confirmAttendance(\'' + meeting.id + '\', \'Hadir\')">' +
           '<svg class="ic-svg" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6"></path></svg> Hadir' +
@@ -839,25 +828,34 @@
           '✓ Anda telah mengonfirmasi HADIR pada rapat ini.' +
           '</div>' +
 
-          // Tombol Scan Presensi
-          (pres.presensiStatus === 'Sudah presensi' ?
+          // Lapis 2: Scan QR Berdasarkan scan_button_state
+          (flags.scan_button_state === 'ALREADY_SCANNED' ?
             '<div class="card bl-success" style="background:#eaf8ef; margin-bottom:0; padding:12px;">' +
             '<div style="font-weight:700; color:var(--success); font-size:13.5px;">Anda sudah presensi pada pukul ' + pres.waktuPresensiStr + '</div>' +
             '<div style="font-size:11.5px; color:var(--muted); margin-top:2px;">Status Presensi: <span class="badge ' + (pres.badgeClass || 'badge-success') + '">' + (pres.badge || 'Tepat Waktu') + '</span></div>' +
             '</div>'
-            :
-            '<div>' +
-            '<button type="button" class="btn btn-primary btn-block btn-lg" ' + (!canScan ? 'disabled' : '') + ' onclick="Mobile.openScanForMeeting(\'' + meeting.id + '\')">' +
-            '<svg class="ic-svg" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path></svg> Scan QR Presensi' +
-            '</button>' +
-            (scanDisabledReason ? '<div style="font-size:11.5px; color:var(--warn); margin-top:6px; text-align:center;">' + scanDisabledReason + '</div>' : '') +
-            '</div>') +
+            : (flags.scan_button_state === 'ACTIVE' ?
+              '<div>' +
+              '<button type="button" class="btn btn-primary btn-block btn-lg" onclick="Mobile.openScanForMeeting(\'' + meeting.id + '\')">' +
+              '<svg class="ic-svg" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path></svg> Scan QR Presensi' +
+              '</button>' +
+              '<div style="font-size:11px; color:var(--muted); margin-top:6px; text-align:center;">Presensi dibuka hari ini (diperbolehkan sebelum jam ' + meeting.jamMulai + ' WIB).</div>' +
+              '</div>'
+              :
+              '<div>' +
+              '<button type="button" class="btn btn-secondary btn-block btn-lg" disabled>' +
+              '<svg class="ic-svg" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path></svg> Scan QR Belum Aktif' +
+              '</button>' +
+              '<div style="font-size:11.5px; color:var(--warn); margin-top:6px; text-align:center;">Presensi hanya aktif pada hari rapat (' + Rules.formatDateIndo(new Date(meeting.tanggal)) + ').</div>' +
+              '</div>'
+            )) +
           '</div>' : '') +
 
         (pres.kehadiran === 'Tidak hadir' ?
           '<div style="background:#fdf2f2; border:1px solid #f6c0c0; padding:10px 12px; border-radius:8px; font-size:12px; color:var(--ink);">' +
           '<div style="font-weight:700; color:var(--danger); margin-bottom:4px;">Anda mengonfirmasi TIDAK HADIR (Final)</div>' +
-          '<div>Alasan: <strong>' + (pres.alasanTidakHadir || '-') + '</strong></div>' +
+          '<div>Alasan: <strong>' + (pres.alasanTidakHadir || pres.absence_reason || '-') + '</strong></div>' +
+          '<div style="font-size:11px; color:var(--muted); margin-top:4px;">Status presensi: <span class="badge badge-neutral">TIDAK BERLAKU</span></div>' +
           '</div>' : '') +
 
         '</div>' : '');
@@ -886,14 +884,12 @@
       '<button type="button" class="modal-close" onclick="Mobile.closeModal(\'docViewerModal\')">&times;</button>' +
       '</div>' +
       '<div class="modal-body" style="background:#fff; font-family:\'Times New Roman\', serif; color:#000; padding:22px; font-size:13px; line-height:1.6;">' +
-      // KOP SURAT RESMI
       '<div style="text-align:center; border-bottom:3px double #000; padding-bottom:8px; margin-bottom:14px;">' +
       '<div style="font-size:14px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px;">DEWAN PERWAKILAN RAKYAT DAERAH</div>' +
       '<div style="font-size:16px; font-weight:800; text-transform:uppercase; letter-spacing:1px;">KOTA MAGELANG</div>' +
       '<div style="font-size:11px; font-family:sans-serif; color:#444;">Jl. Pahlawan No. 1, Kota Magelang, Jawa Tengah 56117 | Telp: (0293) 362241</div>' +
       '</div>' +
 
-      // NOMOR & TANGGAL
       '<div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:12px; font-family:sans-serif;">' +
       '<div>' +
       '<div>Nomor : <strong>' + doc.nomorSurat + '</strong></div>' +
@@ -904,14 +900,12 @@
       '<div style="text-align:right;">Magelang, ' + Rules.formatDateIndo(new Date(doc.tanggalSurat || meeting.tanggal)) + '</div>' +
       '</div>' +
 
-      // KEPADA YTH
       '<div style="margin-bottom:12px; font-size:12.5px;">' +
       'Kepada Yth.<br>' +
       '<strong>Bapak / Ibu Anggota DPRD Kota Magelang</strong><br>' +
       'di Tempat' +
       '</div>' +
 
-      // ISI SURAT
       '<p style="text-align:justify; text-indent:24px; margin:0 0 10px;">' +
       'Menindaklanjuti agenda kerja pimpinan dewan dan komisi, bersama ini kami mengundang Bapak/Ibu Anggota DPRD Kota Magelang untuk menghadiri rapat kedewanan yang akan diselenggarakan pada:' +
       '</p>' +
@@ -929,7 +923,6 @@
       'Mengingat pentingnya materi pembahasan tersebut, kami mengharapkan kehadiran Bapak/Ibu tepat pada waktunya serta melakukan presensi kehadiran digital mandiri melalui aplikasi e-Parlemen.' +
       '</p>' +
 
-      // TANDA TANGAN
       '<div style="text-align:right; margin-top:14px; font-family:sans-serif; font-size:12px;">' +
       '<div>a.n. Pimpinan DPRD Kota Magelang</div>' +
       '<div style="font-weight:700;">' + doc.penandatangan + '</div>' +
@@ -967,10 +960,10 @@
       '<button type="button" class="modal-close" onclick="Mobile.closeModal(\'absentModal\')">&times;</button>' +
       '</div>' +
       '<div class="modal-body">' +
-      '<p style="margin-top:0;">Konfirmasi ini bersifat <strong>FINAL</strong> dan tidak dapat diubah kembali setelah dikirim.</p>' +
+      '<p style="margin-top:0;">Konfirmasi ini bersifat <strong>FINAL (One-Way)</strong> dan tidak dapat diubah kembali setelah dikirim.</p>' +
       '<div class="form-group">' +
-      '<label>Alasan Tidak Hadir <span class="req">* (Wajib diisi)</span></label>' +
-      '<textarea id="mobAbsentReasonText" placeholder="Contoh: Tugas luar kota / Sakit..." required></textarea>' +
+      '<label>Alasan Tidak Hadir (absence_reason) <span class="req">* (Wajib diisi)</span></label>' +
+      '<textarea id="mobAbsentReasonText" placeholder="Contoh: Tugas dinas luar kota / Sakit..." required></textarea>' +
       '</div>' +
       '</div>' +
       '<div class="modal-footer">' +
@@ -1007,7 +1000,7 @@
   };
 
   /* ==========================================================================
-     MENU 5: PROFIL (DENGAN SELECTOR PADAT 8 DEMO MEMBER)
+     MENU 5: PROFIL
      ========================================================================== */
   Mobile.renderProfil = function (container) {
     container = container || document.getElementById('mobileMainContent');
@@ -1036,7 +1029,7 @@
 
       '<div class="card">' +
       '<div style="font-weight:700; font-size:14px; margin-bottom:6px;">Ganti Profil Skenario Demo</div>' +
-      '<div style="font-size:12px; color:var(--muted); margin-bottom:10px;">Pilih salah satu dari 8 kasus uji representatif:</div>' +
+      '<div style="font-size:12px; color:var(--muted); margin-bottom:10px;">Pilih salah satu dari 10 profil kasus uji:</div>' +
       '<select id="profilMemberSelect" class="filter-select" style="width:100%; font-size:12.5px;">' +
       curated.map(function (item) {
         return '<option value="' + item.id + '" ' + (item.id === curMember.id ? 'selected' : '') + '>' + item.id + ' — ' + item.tag + '</option>';
@@ -1072,12 +1065,13 @@
       itemsHtml = '<div style="color:var(--muted); text-align:center; padding:20px;">Tidak ada agenda rapat untuk hari ini.</div>';
     } else {
       todayMeetings.forEach(function (m) {
-        var der = Rules.deriveMeetingStatus(m, now);
+        var der = Rules.deriveDisplayStatus(m, now);
+        var lbl = (der === 'BERLANGSUNG') ? 'Sedang Berjalan' : ((der === 'SELESAI') ? 'Selesai' : 'Mendatang');
         itemsHtml +=
           '<div class="card" style="margin-bottom:8px; cursor:pointer;" onclick="Mobile.closeModal(\'todayModal\'); Mobile.openMeetingDetail(\'' + m.id + '\')">' +
           '<div style="display:flex; justify-content:space-between; align-items:center;">' +
           '<div style="font-weight:700; font-size:13.5px;">' + m.namaRapat + '</div>' +
-          '<span class="badge ' + (der === 'Berjalan' ? 'badge-live' : 'badge-info') + '">' + der + '</span>' +
+          '<span class="badge ' + (der === 'BERLANGSUNG' ? 'badge-live' : 'badge-info') + '">' + lbl + '</span>' +
           '</div>' +
           '<div style="font-size:12px; color:var(--muted); margin-top:4px;">' + m.jamMulai + '–' + m.jamSelesai + ' WIB · ' + (m.lokasi || 'DPRD Kota Magelang') + '</div>' +
           '</div>';

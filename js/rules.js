@@ -1,7 +1,7 @@
 /**
  * rules.js - e-Parlemen DPRD Kota Magelang
- * Sumber Kebenaran: kuorum_rapat (2).xlsx & Keputusan Final
- * Tidak ada placeholder / TODO. Semua logika komplit.
+ * Berdasarkan TRD & API Specification Modul Jadwal & Presensi Rapat v1.1
+ * Zona Waktu: Asia/Jakarta (WIB / UTC+7)
  */
 
 (function (window) {
@@ -9,61 +9,85 @@
 
   var Rules = {};
 
-  // 15 Jenis Rapat Resmi DPRD Kota Magelang
+  // 15 Jenis Rapat Resmi DPRD Kota Magelang (15 Seeder Tetap)
   Rules.JENIS_RAPAT = [
-    'Badan Anggaran',
-    'Badan Musyawarah',
-    'Komisi I',
-    'Komisi II',
-    'Komisi III',
-    'Komisi IV',
-    'Rapat Paripurna',
-    'Fraksi',
-    'Fraksi Gabungan',
-    'Pansus',
-    'Banleg',
-    'Badan Kehormatan',
-    'Rapat Pimpinan',
-    'Rapat Dengar Pendapat',
-    'Rapat Kerja'
+    { code: 'PARIPURNA', name: 'Rapat Paripurna' },
+    { code: 'PARIPURNA_ISTIMEWA', name: 'Rapat Paripurna Istimewa' },
+    { code: 'PIMPINAN', name: 'Rapat Pimpinan DPRD' },
+    { code: 'FRAKSI', name: 'Rapat Fraksi' },
+    { code: 'GABUNGAN_FRAKSI', name: 'Rapat Gabungan Fraksi' },
+    { code: 'BAMUS', name: 'Rapat Badan Musyawarah (Bamus)' },
+    { code: 'KOMISI', name: 'Rapat Komisi' },
+    { code: 'GABUNGAN_KOMISI', name: 'Rapat Gabungan Komisi' },
+    { code: 'BANGGAR', name: 'Rapat Badan Anggaran (Banggar)' },
+    { code: 'BAPEMPERDA', name: 'Rapat Badan Pembentukan Perda (Bapemperda)' },
+    { code: 'BK', name: 'Rapat Badan Kehormatan (BK)' },
+    { code: 'PANSUS', name: 'Rapat Panitia Khusus (Pansus)' },
+    { code: 'PANJA', name: 'Rapat Panitia Kerja (Panja)' },
+    { code: 'KONSULTASI', name: 'Rapat Konsultasi' },
+    { code: 'DENGAR_PENDAPAT', name: 'Rapat Dengar Pendapat (RDP / RDPU)' }
   ];
 
-  // Unit AKD dan Setwan
-  Rules.UNIT_OPTIONS = [
-    'Komisi I',
-    'Komisi II',
-    'Komisi III',
-    'Komisi IV',
-    'Badan Anggaran',
-    'Badan Musyawarah',
-    'Rapat Paripurna (Semua)',
-    'Fraksi PDI Perjuangan',
-    'Fraksi PKB',
-    'Fraksi PKS',
-    'Fraksi Golkar',
-    'Fraksi Gerindra',
-    'Fraksi Demokrat',
-    'Pansus',
-    'Bapemperda / Banleg'
+  Rules.JENIS_RAPAT_NAMES = Rules.JENIS_RAPAT.map(function (j) { return j.name; });
+
+  // Master Filter Unit Tipe & Unit Organisasi pada Periode Aktif
+  Rules.UNIT_TYPES = [
+    { code: 'ALL', name: 'Semua Unit Tipe' },
+    { code: 'KOMISI', name: 'KOMISI' },
+    { code: 'AKD', name: 'AKD (Alat Kelengkapan DPRD)' },
+    { code: 'FRAKSI', name: 'FRAKSI' },
+    { code: 'SETWAN', name: 'SETWAN' }
   ];
 
-  // Matriks Status: apakah status aktivitas dihitung bentrok hard, warning, atau tidak bentrok
+  Rules.ORGANIZATION_UNITS = [
+    // KOMISI
+    { id: 'ou-komisi-1', typeCode: 'KOMISI', code: 'KOMISI_I', name: 'Komisi I', memberRange: [1, 10] },
+    { id: 'ou-komisi-2', typeCode: 'KOMISI', code: 'KOMISI_II', name: 'Komisi II', memberRange: [11, 20] },
+    { id: 'ou-komisi-3', typeCode: 'KOMISI', code: 'KOMISI_III', name: 'Komisi III', memberRange: [21, 30] },
+    { id: 'ou-komisi-4', typeCode: 'KOMISI', code: 'KOMISI_IV', name: 'Komisi IV', memberRange: [31, 40] },
+    // AKD
+    { id: 'ou-pimpinan', typeCode: 'AKD', code: 'PIMPINAN', name: 'Pimpinan DPRD', memberRange: [1, 5] },
+    { id: 'ou-bamus', typeCode: 'AKD', code: 'BAMUS', name: 'Badan Musyawarah (Bamus)', memberRange: [1, 20] },
+    { id: 'ou-banggar', typeCode: 'AKD', code: 'BANGGAR', name: 'Badan Anggaran (Banggar)', memberRange: [1, 25] },
+    { id: 'ou-bapemperda', typeCode: 'AKD', code: 'BAPEMPERDA', name: 'Badan Pembentukan Perda (Bapemperda)', memberRange: [1, 15] },
+    { id: 'ou-bk', typeCode: 'AKD', code: 'BK', name: 'Badan Kehormatan (BK)', memberRange: [6, 12] },
+    { id: 'ou-pansus', typeCode: 'AKD', code: 'PANSUS', name: 'Panitia Khusus (Pansus)', memberRange: [1, 35] },
+    { id: 'ou-panja', typeCode: 'AKD', code: 'PANJA', name: 'Panitia Kerja (Panja)', memberRange: [5, 18] },
+    // FRAKSI
+    { id: 'ou-fraksi-pdip', typeCode: 'FRAKSI', code: 'F_PDIP', name: 'Fraksi PDI Perjuangan', memberFilter: function (i) { return (i - 1) % 6 === 0; } },
+    { id: 'ou-fraksi-pkb', typeCode: 'FRAKSI', code: 'F_PKB', name: 'Fraksi PKB', memberFilter: function (i) { return (i - 1) % 6 === 1; } },
+    { id: 'ou-fraksi-pks', typeCode: 'FRAKSI', code: 'F_PKS', name: 'Fraksi PKS', memberFilter: function (i) { return (i - 1) % 6 === 2; } },
+    { id: 'ou-fraksi-golkar', typeCode: 'FRAKSI', code: 'F_GOLKAR', name: 'Fraksi Golkar', memberFilter: function (i) { return (i - 1) % 6 === 3; } },
+    { id: 'ou-fraksi-gerindra', typeCode: 'FRAKSI', code: 'F_GERINDRA', name: 'Fraksi Gerindra', memberFilter: function (i) { return (i - 1) % 6 === 4; } },
+    { id: 'ou-fraksi-demokrat', typeCode: 'FRAKSI', code: 'F_DEMOKRAT', name: 'Fraksi Demokrat', memberFilter: function (i) { return (i - 1) % 6 === 5; } },
+    // SETWAN & PARIPURNA (SEMUA)
+    { id: 'ou-paripurna', typeCode: 'ALL', code: 'PARIPURNA', name: 'Rapat Paripurna (Semua)', memberRange: [1, 100] },
+    { id: 'ou-setwan', typeCode: 'SETWAN', code: 'SETWAN', name: 'Sekretariat DPRD', memberRange: [1, 1] }
+  ];
+
+  Rules.UNIT_OPTIONS = Rules.ORGANIZATION_UNITS.map(function (ou) { return ou.name; });
+
+  // Matriks Status: Sumber Bentrok Hard Conflict vs Warning vs Bersih
   Rules.STATUS_RULES = {
-    // Penugasan
-    'Penugasan Disetujui': { conflict: true, warning: false, note: 'Hard conflict: anggota benar-benar bertugas' },
-    'Penugasan Menunggu persetujuan': { conflict: false, warning: true, note: 'Warning: belum pasti, tidak mengurangi kuorum' },
-    'Penugasan Dibatalkan': { conflict: false, warning: false, note: 'Penugasan sudah batal' },
-    'Penugasan Disetujui (anggota menolak)': { conflict: false, warning: false, note: 'Anggota sudah menolak' },
+    // Penugasan (Hard Conflict jika Approved dan tidak ditolak)
+    'Penugasan Disetujui': { conflict: true, warning: false, label: 'Sudah ada penugasan lain diwaktu tersebut' },
+    'APPROVED': { conflict: true, warning: false, label: 'Sudah ada penugasan lain diwaktu tersebut' },
+    'Penugasan Menunggu persetujuan': { conflict: false, warning: true, label: 'Penugasan Menunggu persetujuan' },
+    'Penugasan Dibatalkan': { conflict: false, warning: false, label: 'Penugasan Dibatalkan (Lolos)' },
+    'Penugasan Disetujui (anggota menolak)': { conflict: false, warning: false, label: 'Penugasan Disetujui (anggota menolak) (Lolos)' },
 
-    // Rapat lain
-    'Rapat Submit': { conflict: true, warning: false, note: 'Hard conflict: rapat lain sudah terjadwal' },
-    'Rapat Dijadwalkan': { conflict: true, warning: false, note: 'Hard conflict: rapat lain terjadwal' },
-    'Rapat Draft': { conflict: false, warning: false, note: 'Draft tidak mengunci jadwal siapa pun' },
-    'Rapat Cancelled': { conflict: false, warning: false, note: 'Rapat sudah dibatalkan' },
-    'Rapat Batal': { conflict: false, warning: false, note: 'Rapat sudah dibatalkan' },
+    // Rapat lain (Hard Conflict jika Submit / Dijadwalkan)
+    'Rapat Submit': { conflict: true, warning: false, label: 'Sudah ada rapat lain diwaktu tersebut' },
+    'Rapat Dijadwalkan': { conflict: true, warning: false, label: 'Sudah ada rapat lain diwaktu tersebut' },
+    'DIJADWALKAN': { conflict: true, warning: false, label: 'Sudah ada rapat lain diwaktu tersebut' },
+    'Rapat Draft': { conflict: false, warning: false, label: 'Rapat Draft (Lolos)' },
+    'DRAFT': { conflict: false, warning: false, label: 'Rapat Draft (Lolos)' },
+    'Rapat Cancelled': { conflict: false, warning: false, label: 'Rapat Batal (Lolos)' },
+    'Rapat Batal': { conflict: false, warning: false, label: 'Rapat Batal (Lolos)' },
+    'BATAL': { conflict: false, warning: false, label: 'Rapat Batal (Lolos)' },
 
     // Surat Masuk
-    'Surat masuk': { conflict: false, warning: true, note: 'Warning: surat/undangan masuk' }
+    'Surat masuk': { conflict: false, warning: true, label: 'Surat masuk (Peringatan)' }
   };
 
   /**
@@ -72,28 +96,27 @@
   Rules.evaluateStatusCategory = function (status) {
     if (!status) return 'clean';
     var rule = Rules.STATUS_RULES[status];
-    if (!rule) {
-      var s = status.toLowerCase();
-      if (s.indexOf('disetujui (anggota menolak)') !== -1 || s.indexOf('dibatalkan') !== -1 || s.indexOf('draft') !== -1 || s.indexOf('cancelled') !== -1) {
-        return 'clean';
-      }
-      if (s.indexOf('menunggu') !== -1 || s.indexOf('surat') !== -1) {
-        return 'warning';
-      }
-      if (s.indexOf('disetujui') !== -1 || s.indexOf('submit') !== -1 || s.indexOf('dijadwalkan') !== -1) {
-        return 'conflict';
-      }
+    if (rule) {
+      if (rule.conflict) return 'conflict';
+      if (rule.warning) return 'warning';
       return 'clean';
     }
-    if (rule.conflict) return 'conflict';
-    if (rule.warning) return 'warning';
+    var s = status.toLowerCase();
+    if (s.indexOf('disetujui (anggota menolak)') !== -1 || s.indexOf('dibatalkan') !== -1 || s.indexOf('draft') !== -1 || s.indexOf('cancelled') !== -1 || s.indexOf('batal') !== -1) {
+      return 'clean';
+    }
+    if (s.indexOf('menunggu') !== -1 || s.indexOf('surat') !== -1) {
+      return 'warning';
+    }
+    if (s.indexOf('disetujui') !== -1 || s.indexOf('submit') !== -1 || s.indexOf('dijadwalkan') !== -1) {
+      return 'conflict';
+    }
     return 'clean';
   };
 
   /**
-   * Cek irisan waktu antara interval A [mulaiA, selesaiA] dan interval B [mulaiB, selesaiB]
-   * Aturan baku: mulaiA < selesaiB DAN selesaiA > mulaiB
-   * Bersentuhan (selesaiA === mulaiB atau mulaiA === selesaiB) TIDAK beririsan.
+   * Cek irisan waktu: start_a < end_b AND end_a > start_b
+   * Titik batas (jam_selesai == jam_mulai) TIDAK beririsan (LOLOS).
    */
   Rules.isTimeOverlap = function (startA, endA, startB, endB) {
     var tStartA = typeof startA === 'number' ? startA : new Date(startA).getTime();
@@ -109,12 +132,11 @@
   };
 
   /**
-   * Hitung Kuorum 2/3
-   * N = jumlah peserta final (tercentang)
-   * Syarat minimal = ceil(N * 2 / 3)
-   * Bentrok unik = jumlah peserta yang memiliki minimal 1 bentrok hard
-   * Tersedia = N - bentrokUnik
-   * Lolos jika Tersedia >= Syarat
+   * Hitung Kuorum 2/3 (TRD v1.1):
+   * N = Total peserta tercentang
+   * Syarat Kuorum = ceil(2/3 * N)
+   * Tersedia = N - Jumlah Bentrok Unik
+   * Lolos = Tersedia >= Syarat Kuorum
    */
   Rules.calculateQuorum = function (N, bentrokUnik) {
     var numN = Math.max(0, parseInt(N, 10) || 0);
@@ -127,18 +149,26 @@
 
     return {
       N: numN,
+      total_invited: numN,
       syarat: syarat,
+      quorum_required: syarat,
       bentrokUnik: numBentrok,
+      conflict_unique_count: numBentrok,
       tersedia: tersedia,
+      available_count: tersedia,
       maksBolehBentrok: maksBolehBentrok,
       sisaRuangBentrok: sisaRuangBentrok,
       lolos: lolos,
-      statusText: lolos ? 'LOLOS' : 'GAGAL'
+      is_quorum_met: lolos,
+      statusText: lolos ? 'LOLOS' : 'GAGAL',
+      banner_message: lolos
+        ? 'Semua anggota rapat memenuhi kriteria 2/3 Kuorum'
+        : 'Kuorum 2/3 tidak terpenuhi (Tersedia: ' + tersedia + ' dari minimal ' + syarat + ' peserta).'
     };
   };
 
   /**
-   * Evaluasi aktivitas seorang peserta terhadap rapat yang sedang diajukan
+   * Evaluasi aktivitas seorang peserta terhadap rapat yang diajukan
    */
   Rules.evaluateParticipantActivities = function (meeting, activities) {
     var result = {
@@ -146,6 +176,7 @@
       hasWarning: false,
       conflictType: null,
       warningType: null,
+      conflictLabel: null,
       conflictDetails: [],
       warningDetails: [],
       cleanActivities: []
@@ -167,13 +198,20 @@
       if (overlaps) {
         if (category === 'conflict') {
           result.hasConflict = true;
-          var type = (act.sumber && act.sumber.toLowerCase().indexOf('rapat') !== -1) ? 'rapat' : 'penugasan';
-          if (!result.conflictType) result.conflictType = type;
+          var isMeeting = (act.sumber && act.sumber.toLowerCase().indexOf('rapat') !== -1);
+          var type = isMeeting ? 'MEETING' : 'ASSIGNMENT';
+          var label = isMeeting ? 'Sudah ada rapat lain diwaktu tersebut' : 'Sudah ada penugasan lain diwaktu tersebut';
+          
+          if (!result.conflictType) {
+            result.conflictType = type;
+            result.conflictLabel = label;
+          }
           result.conflictDetails.push({
             sumber: act.sumber,
             judul: act.judul,
             status: act.status,
-            keterangan: type === 'rapat' ? 'Sudah ada rapat lain diwaktu tersebut' : 'Sudah ada penugasan lain diwaktu tersebut'
+            type: type,
+            keterangan: label
           });
         } else if (category === 'warning') {
           result.hasWarning = true;
@@ -197,35 +235,143 @@
   };
 
   /**
-   * Menentukan status turunan rapat
+   * Menentukan status tampilan (display_status) real-time (TRD v1.1)
+   * Nilai Enum DB: DRAFT, DIJADWALKAN, SELESAI, BATAL
+   * display_status: DRAFT, DIJADWALKAN, BERLANGSUNG, SELESAI, BATAL
    */
-  Rules.deriveMeetingStatus = function (meeting, currentTime) {
-    if (!meeting) return 'Mendatang';
-    if (meeting.status === 'Draft') return 'Draft';
-    if (meeting.status === 'Batal') return 'Dibatalkan';
-    if (meeting.status === 'Selesai') return 'Selesai';
+  Rules.deriveDisplayStatus = function (meeting, currentTime) {
+    if (!meeting) return 'DIJADWALKAN';
+    var st = (meeting.status || '').toUpperCase();
+    if (st === 'DRAFT') return 'DRAFT';
+    if (st === 'BATAL' || st === 'CANCELLED' || st === 'DIBATALKAN') return 'BATAL';
+    if (st === 'SELESAI') return 'SELESAI';
 
     var nowMs = typeof currentTime === 'number' ? currentTime : new Date(currentTime).getTime();
     var startMs = Rules.parseDateTime(meeting.tanggal, meeting.jamMulai);
     var endMs = Rules.parseDateTime(meeting.tanggal, meeting.jamSelesai);
 
     if (nowMs >= endMs) {
-      return 'Selesai';
+      return 'SELESAI';
     } else if (nowMs >= startMs) {
-      return 'Berjalan'; // Sedang Berlangsung
+      return 'BERLANGSUNG';
     } else {
-      return 'Mendatang';
+      return 'DIJADWALKAN';
     }
   };
 
   /**
-   * Validasi scan presensi QR
+   * Alias kompatibilitas UI sebelumnya:
+   * Returns: 'Draft' | 'Dibatalkan' | 'Berjalan' | 'Selesai' | 'Mendatang'
+   */
+  Rules.deriveMeetingStatus = function (meeting, currentTime) {
+    var ds = Rules.deriveDisplayStatus(meeting, currentTime);
+    if (ds === 'DRAFT') return 'Draft';
+    if (ds === 'BATAL') return 'Dibatalkan';
+    if (ds === 'BERLANGSUNG') return 'Berjalan';
+    if (ds === 'SELESAI') return 'Selesai';
+    return 'Mendatang';
+  };
+
+  /**
+   * Matriks Perilaku Action Button & UI Flags (TRD v1.1 Bagian 4, Hal 11-12)
+   */
+  Rules.getActionFlags = function (meeting, currentTime, memberPresence) {
+    var displayStatus = Rules.deriveDisplayStatus(meeting, currentTime);
+    var nowMs = typeof currentTime === 'number' ? currentTime : new Date(currentTime).getTime();
+    var todayStr = Rules.formatDateYMD(new Date(nowMs));
+    var isToday = (meeting && meeting.tanggal === todayStr);
+
+    var flags = {
+      display_status: displayStatus,
+      // Web Admin Flags
+      can_continue: false,
+      can_delete: false,
+      can_view_detail: true,
+      can_cancel: false,
+      show_qr: false,
+      show_realtime_counter: false,
+      show_report_btn: false,
+      show_cancel_reason: false,
+      // Mobile Flags
+      can_confirm: false,
+      scan_button_state: 'HIDDEN' // HIDDEN | DISABLED_NOT_TODAY | ACTIVE | ALREADY_SCANNED
+    };
+
+    if (displayStatus === 'DRAFT') {
+      flags.can_continue = true;
+      flags.can_delete = true;
+      flags.can_view_detail = false;
+      flags.can_cancel = false;
+      flags.can_confirm = false;
+      flags.scan_button_state = 'HIDDEN';
+    } else if (displayStatus === 'DIJADWALKAN') {
+      flags.can_view_detail = true;
+      flags.can_cancel = true;
+      flags.show_qr = true;
+      flags.show_realtime_counter = true;
+      flags.show_report_btn = false;
+
+      var pres = memberPresence || {};
+      flags.can_confirm = (pres.kehadiran === 'Belum konfirmasi');
+
+      if (pres.kehadiran === 'Hadir') {
+        if (!isToday) {
+          flags.scan_button_state = 'DISABLED_NOT_TODAY';
+        } else if (pres.presensiStatus === 'Sudah presensi') {
+          flags.scan_button_state = 'ALREADY_SCANNED';
+        } else {
+          flags.scan_button_state = 'ACTIVE';
+        }
+      } else {
+        flags.scan_button_state = 'HIDDEN';
+      }
+    } else if (displayStatus === 'BERLANGSUNG') {
+      flags.can_view_detail = true;
+      flags.can_cancel = true;
+      flags.show_qr = true;
+      flags.show_realtime_counter = true;
+      flags.show_report_btn = false;
+
+      var presB = memberPresence || {};
+      flags.can_confirm = (presB.kehadiran === 'Belum konfirmasi');
+
+      if (presB.kehadiran === 'Hadir') {
+        if (presB.presensiStatus === 'Sudah presensi') {
+          flags.scan_button_state = 'ALREADY_SCANNED';
+        } else {
+          flags.scan_button_state = 'ACTIVE';
+        }
+      } else {
+        flags.scan_button_state = 'HIDDEN';
+      }
+    } else if (displayStatus === 'SELESAI') {
+      flags.can_view_detail = true;
+      flags.can_cancel = false;
+      flags.show_qr = false;
+      flags.show_report_btn = true;
+      flags.can_confirm = false;
+      flags.scan_button_state = 'HIDDEN';
+    } else if (displayStatus === 'BATAL') {
+      flags.can_view_detail = true;
+      flags.can_cancel = false;
+      flags.show_qr = false;
+      flags.show_report_btn = true;
+      flags.show_cancel_reason = true;
+      flags.can_confirm = false;
+      flags.scan_button_state = 'HIDDEN';
+    }
+
+    return flags;
+  };
+
+  /**
+   * Validasi scan presensi QR (TRD v1.1 Hal 17-18)
    */
   Rules.validatePresenceScan = function (meeting, scanTime) {
     if (!meeting) {
       return { valid: false, message: 'QR tidak dikenali', badge: null, lateMinutes: 0 };
     }
-    if (meeting.status === 'Batal') {
+    if (meeting.status === 'Batal' || meeting.status === 'BATAL') {
       return { valid: false, message: 'QR tidak valid (Rapat telah dibatalkan)', badge: null, lateMinutes: 0 };
     }
 
@@ -246,7 +392,7 @@
     var startMs = Rules.parseDateTime(meeting.tanggal, meeting.jamMulai);
     var endMs = Rules.parseDateTime(meeting.tanggal, meeting.jamSelesai);
 
-    // Cek apakah sudah lewat jam selesai
+    // Cek apakah sudah lewat jam selesai rapat
     if (tScan >= endMs) {
       return {
         valid: false,
@@ -260,9 +406,10 @@
     if (tScan <= startMs) {
       return {
         valid: true,
-        message: 'Selamat, Anda sudah presensi tepat waktu',
+        message: 'Selamat Anda Sudah Presensi Tepat Waktu',
         badge: 'Tepat Waktu',
         badgeClass: 'badge-success',
+        punctualityLabel: 'Tepat Waktu',
         lateMinutes: 0
       };
     } else {
@@ -273,6 +420,7 @@
         message: 'Presensi berhasil (Terlambat ' + lateMin + ' menit)',
         badge: 'Terlambat ' + lateMin + ' menit',
         badgeClass: 'badge-warn',
+        punctualityLabel: 'Terlambat ' + lateMin + ' mnt',
         lateMinutes: lateMin
       };
     }

@@ -1,8 +1,12 @@
 /**
- * admin.js - Controller Web Admin e-Parlemen DPRD Kota Magelang (Revisi Template)
- * Menangani Jadwal Rapat, Form Buat/Edit Rapat (Peserta sesuai Komisi/Unit, Tombol Bawah,
- * Cek Kuorum hanya saat klik Jadwalkan), Status Sedang Berlangsung (Bisa Dibatalkan),
- * QR Code, Rekap Presensi, dan Laporan Rapat.
+ * admin.js - Controller Web Admin e-Parlemen DPRD Kota Magelang
+ * Menyesuaikan Dokumen TRD & API Specification v1.1:
+ * - Master Filter Unit Tipe & Unit Organisasi Periode Aktif
+ * - Penarikan Peserta via user_assignments dengan Deduplikasi
+ * - Cek Bentrok Hard Conflict & Interactive Quorum Banner
+ * - 15 Seeder Jenis Rapat Tetap
+ * - Matriks Action Buttons & UI Flags Sesuai State Machine
+ * - Laporan Rekapitulasi Presensi Resmi & Ekspor Excel
  */
 
 (function (window) {
@@ -17,7 +21,8 @@
 
   // State Form Rapat
   var formState = {
-    selectedUnits: ['Komisi I'], // Default Komisi I (10 orang) agar realistis
+    selectedUnitType: 'ALL',
+    selectedUnits: ['Komisi I'],
     checkedParticipants: {},
     uploadedFiles: []
   };
@@ -51,7 +56,7 @@
     bar.innerHTML =
       '<div class="ts-title">' +
         '<svg class="ic-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>' +
-        '<span>Simulator Waktu (WIB)</span>' +
+        '<span>Simulator Waktu Server (WIB)</span>' +
       '</div>' +
       '<div class="ts-controls">' +
         '<div class="ts-now-display" id="tsDisplayNow">' + nowStr + '</div>' +
@@ -64,7 +69,7 @@
           '<button type="button" class="ts-btn" data-preset="2026-11-20T08:30:00">Hari H 08:30 (Berlangsung)</button>' +
           '<button type="button" class="ts-btn" data-preset="2026-11-20T09:30:00">Hari H 09:30 (Berjalan)</button>' +
           '<button type="button" class="ts-btn" data-preset="2026-11-20T12:05:00">Hari H 12:05 (Selesai)</button>' +
-          '<button type="button" class="ts-btn" data-preset="2026-11-19T09:00:00">H-1 (19 Nov)</button>' +
+          '<button type="button" class="ts-btn" data-preset="2026-11-19T08:00:00">H-1 08:00 (Reminder)</button>' +
           '<button type="button" class="ts-btn" id="tsResetBtn">Reset Waktu</button>' +
         '</div>' +
       '</div>';
@@ -116,6 +121,20 @@
     });
   };
 
+  Admin.showLockedNotice = function (menuName) {
+    Admin.showModalNotice(
+      'Fitur Terkunci (Diluar Scope Prototype)',
+      '<div style="text-align:center; padding:10px 0;">' +
+        '<div style="font-size:38px; margin-bottom:8px;">🔒</div>' +
+        '<div style="font-weight:700; font-size:15px; color:var(--ink); margin-bottom:6px;">Menu "' + menuName + '" Terkunci</div>' +
+        '<div style="font-size:12.5px; color:var(--muted); line-height:1.5;">' +
+          'Berdasarkan ketentuan prototype persidangan e-Parlemen, sidebar aktif difokuskan secara penuh pada modul <strong>Jadwal Rapat &amp; Manajemen Kuorum Presensi</strong>.' +
+        '</div>' +
+      '</div>',
+      'Mengerti'
+    );
+  };
+
   Admin.navigate = function (view, param) {
     currentView = view;
     var container = document.getElementById('adminViewContainer');
@@ -133,70 +152,88 @@
   };
 
   /* ==========================================================================
-     VIEW: JADWAL RAPAT (LIST) - Termasuk Tab Sedang Berlangsung & Batalkan
+     VIEW: JADWAL RAPAT (LIST)
      ========================================================================== */
   Admin.renderJadwalView = function (container) {
     var allM = Store.getMeetings();
     var nowTime = Store.now();
     var cMendatang = 0, cBerlangsung = 0, cSelesai = 0, cBatal = 0;
     allM.forEach(function (m) {
-      var d = Rules.deriveMeetingStatus(m, nowTime);
-      if (m.status === 'Batal') cBatal++;
-      else if (d === 'Berjalan') cBerlangsung++;
-      else if (d === 'Selesai') cSelesai++;
+      var d = Rules.deriveDisplayStatus(m, nowTime);
+      if (m.status === 'Batal' || d === 'BATAL') cBatal++;
+      else if (d === 'BERLANGSUNG') cBerlangsung++;
+      else if (d === 'SELESAI') cSelesai++;
       else cMendatang++;
     });
 
     container.innerHTML =
       '<div class="admin-topbar">' +
         '<div>' +
-          '<h2>Jadwal Rapat</h2>' +
-          '<div class="admin-crumb">Admin Sekretariat › Manajemen Rapat DPRD Kota Magelang</div>' +
+          '<h2>Jadwal Rapat DPRD Kota Magelang</h2>' +
+          '<div class="admin-crumb">Manajemen Rapat &amp; Pemantauan Kuorum Sidang (TRD v1.1)</div>' +
         '</div>' +
-        '<div>' +
-          '<button class="btn btn-primary" id="btnTambahRapat">' +
-            '<svg class="ic-svg" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>' +
-            ' Tambah Rapat' +
+        '<div style="display:flex; gap:10px;">' +
+          '<button class="btn btn-primary" id="btnCreateNewMeeting">' +
+            '<svg class="ic-svg" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Buat Jadwal Rapat' +
           '</button>' +
         '</div>' +
       '</div>' +
+
       '<div class="admin-content">' +
+        '<div class="card" style="margin-bottom:18px;">' +
+          '<div class="form-grid-3">' +
+            '<div class="form-group">' +
+              '<label>Pencarian Rapat</label>' +
+              '<input type="text" id="filterSearch" placeholder="Cari kode rapat atau nama rapat...">' +
+            '</div>' +
+            '<div class="form-group">' +
+              '<label>Jenis Rapat (15 Opsi Tetap)</label>' +
+              '<select id="filterJenis">' +
+                '<option value="">Semua Jenis Rapat</option>' +
+                Rules.JENIS_RAPAT.map(function (j) {
+                  return '<option value="' + j.name + '">' + j.name + '</option>';
+                }).join('') +
+              '</select>' +
+            '</div>' +
+            '<div class="form-group">' +
+              '<label>Status DB</label>' +
+              '<select id="filterStatus">' +
+                '<option value="">Semua Status DB</option>' +
+                '<option value="Draft">DRAFT</option>' +
+                '<option value="Dijadwalkan">DIJADWALKAN</option>' +
+                '<option value="Selesai">SELESAI</option>' +
+                '<option value="Batal">BATAL</option>' +
+              '</select>' +
+            '</div>' +
+          '</div>' +
+          '<div class="form-grid-3" style="margin-top:8px;">' +
+            '<div class="form-group">' +
+              '<label>Tanggal Mulai</label>' +
+              '<input type="date" id="filterStartDate">' +
+            '</div>' +
+            '<div class="form-group">' +
+              '<label>Tanggal Sampai</label>' +
+              '<input type="date" id="filterEndDate">' +
+            '</div>' +
+            '<div class="form-group" style="display:flex; align-items:flex-end; gap:8px;">' +
+              '<button type="button" class="btn btn-secondary" id="btnFilterReset" style="flex:1;">Reset</button>' +
+              '<button type="button" class="btn btn-primary" id="btnFilterApply" style="flex:1;">Terapkan</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+
         '<div class="tabs-nav">' +
           '<button class="tab-btn ' + (currentTab === 'Mendatang' ? 'active' : '') + '" data-tab="Mendatang">Mendatang (' + cMendatang + ')</button>' +
-          '<button class="tab-btn ' + (currentTab === 'Sedang Berlangsung' ? 'active' : '') + '" data-tab="Sedang Berlangsung"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:4px;"></span>Sedang Berlangsung (' + cBerlangsung + ')</button>' +
+          '<button class="tab-btn ' + (currentTab === 'Sedang Berlangsung' ? 'active' : '') + '" data-tab="Sedang Berlangsung">Sedang Berlangsung (' + cBerlangsung + ')</button>' +
           '<button class="tab-btn ' + (currentTab === 'Selesai' ? 'active' : '') + '" data-tab="Selesai">Selesai (' + cSelesai + ')</button>' +
           '<button class="tab-btn ' + (currentTab === 'Dibatalkan' ? 'active' : '') + '" data-tab="Dibatalkan">Dibatalkan (' + cBatal + ')</button>' +
           '<button class="tab-btn ' + (currentTab === 'Semua' ? 'active' : '') + '" data-tab="Semua">Semua (' + allM.length + ')</button>' +
         '</div>' +
 
-        '<div class="filter-bar">' +
-          '<div class="search-input-wrap">' +
-            '<svg class="ic-svg ic-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>' +
-            '<input type="text" id="filterSearch" placeholder="Cari kode rapat atau nama rapat...">' +
-          '</div>' +
-          '<select class="filter-select" id="filterJenis">' +
-            '<option value="">Semua Jenis Rapat (15)</option>' +
-            Rules.JENIS_RAPAT.map(function (j) { return '<option value="' + j + '">' + j + '</option>'; }).join('') +
-          '</select>' +
-          '<select class="filter-select" id="filterStatus">' +
-            '<option value="">Semua Status DB</option>' +
-            '<option value="Draft">Draft</option>' +
-            '<option value="Dijadwalkan">Dijadwalkan</option>' +
-            '<option value="Selesai">Selesai</option>' +
-            '<option value="Batal">Batal</option>' +
-          '</select>' +
-          '<div class="filter-date-group">' +
-            '<span>Dari:</span><input type="date" id="filterStartDate">' +
-            '<span>Sampai:</span><input type="date" id="filterEndDate">' +
-            '<button class="btn btn-secondary btn-sm" id="btnFilterApply">Terapkan</button>' +
-            '<button class="btn btn-secondary btn-sm" id="btnFilterReset">Reset</button>' +
-          '</div>' +
-        '</div>' +
-
         '<div id="meetingListContainer"></div>' +
       '</div>';
 
-    document.getElementById('btnTambahRapat').onclick = function () {
+    document.getElementById('btnCreateNewMeeting').onclick = function () {
       Admin.navigate('form');
     };
 
@@ -240,16 +277,16 @@
     var endDate = document.getElementById('filterEndDate') ? document.getElementById('filterEndDate').value : '';
 
     var filtered = allMeetings.filter(function (m) {
-      var derived = Rules.deriveMeetingStatus(m, now);
+      var d = Rules.deriveDisplayStatus(m, now);
 
       if (currentTab === 'Mendatang') {
-        if (derived !== 'Mendatang' && m.status !== 'Draft') return false;
+        if (d !== 'DIJADWALKAN' && m.status !== 'Draft') return false;
       } else if (currentTab === 'Sedang Berlangsung') {
-        if (derived !== 'Berjalan' || m.status === 'Batal') return false;
+        if (d !== 'BERLANGSUNG' || m.status === 'Batal') return false;
       } else if (currentTab === 'Selesai') {
-        if (derived !== 'Selesai') return false;
+        if (d !== 'SELESAI') return false;
       } else if (currentTab === 'Dibatalkan') {
-        if (m.status !== 'Batal') return false;
+        if (m.status !== 'Batal' && d !== 'BATAL') return false;
       }
 
       if (searchVal) {
@@ -281,27 +318,28 @@
     }
 
     var html = '<div class="table-container"><table class="data-table"><thead><tr>' +
-      '<th>Kode & Nama Rapat</th>' +
-      '<th>Jenis & Unit</th>' +
-      '<th>Waktu & Lokasi</th>' +
+      '<th>Kode &amp; Nama Rapat</th>' +
+      '<th>Jenis &amp; Unit</th>' +
+      '<th>Waktu &amp; Lokasi</th>' +
       '<th>Peserta</th>' +
-      '<th>Status</th>' +
-      '<th style="text-align:right;">Aksi</th>' +
+      '<th>Status (Display)</th>' +
+      '<th style="text-align:right;">Aksi (TRD Matrix)</th>' +
       '</tr></thead><tbody>';
 
     for (var i = 0; i < filtered.length; i++) {
       var m = filtered[i];
-      var derived = Rules.deriveMeetingStatus(m, now);
+      var displayStatus = Rules.deriveDisplayStatus(m, now);
+      var flags = Rules.getActionFlags(m, now);
       var isToday = (m.tanggal === Rules.formatDateYMD(now));
 
       var statusBadge = '';
-      if (m.status === 'Draft') {
+      if (displayStatus === 'DRAFT') {
         statusBadge = '<span class="badge badge-neutral">Draft</span>';
-      } else if (m.status === 'Batal') {
+      } else if (displayStatus === 'BATAL') {
         statusBadge = '<span class="badge badge-danger">Dibatalkan</span>';
-      } else if (derived === 'Berjalan') {
+      } else if (displayStatus === 'BERLANGSUNG') {
         statusBadge = '<span class="badge badge-live">Sedang Berlangsung</span>';
-      } else if (derived === 'Selesai') {
+      } else if (displayStatus === 'SELESAI') {
         statusBadge = '<span class="badge badge-neutral">Selesai</span>';
       } else {
         statusBadge = '<span class="badge badge-info">Dijadwalkan</span>';
@@ -309,26 +347,25 @@
 
       var todayBadge = isToday ? '<span class="badge badge-today">Hari Ini</span> ' : '';
 
+      // Action Buttons sesuai Matriks TRD v1.1 Hal 11-12
       var actionBtns = '';
-      if (m.status === 'Draft') {
-        actionBtns =
-          '<button class="btn btn-secondary btn-sm" onclick="Admin.navigate(\'form\', \'' + m.id + '\')">Lanjutkan</button> ' +
-          '<button class="btn btn-danger btn-sm" onclick="Admin.confirmDeleteMeeting(\'' + m.id + '\')">Hapus</button>';
-      } else if (m.status === 'Batal') {
-        actionBtns =
-          '<button class="btn btn-secondary btn-sm" onclick="Admin.navigate(\'detail\', \'' + m.id + '\')">Lihat Detail</button> ' +
-          '<button class="btn btn-primary btn-sm" onclick="Admin.openReportModal(\'' + m.id + '\')">Rekap Presensi</button>' +
-          (m.alasanBatal ? '<div style="font-size:11px; color:var(--danger); margin-top:4px; max-width:200px; text-align:right;">Alasan: ' + (m.alasanBatal.length > 45 ? m.alasanBatal.slice(0, 45) + '...' : m.alasanBatal) + '</div>' : '');
-      } else if (derived === 'Berjalan' || m.status === 'Dijadwalkan') {
-        // Sedang berlangsung maupun Mendatang: BISA DIBATALKAN!
-        actionBtns =
-          '<button class="btn btn-secondary btn-sm" onclick="Admin.navigate(\'detail\', \'' + m.id + '\')">Lihat Detail</button> ' +
-          '<button class="btn btn-danger btn-sm" onclick="Admin.openCancelMeetingModal(\'' + m.id + '\')">Batalkan Rapat</button>';
-      } else {
-        // Selesai
-        actionBtns =
-          '<button class="btn btn-secondary btn-sm" onclick="Admin.navigate(\'detail\', \'' + m.id + '\')">Lihat Detail</button> ' +
-          '<button class="btn btn-primary btn-sm" onclick="Admin.openReportModal(\'' + m.id + '\')">Rekap Presensi</button>';
+      if (flags.can_continue) {
+        actionBtns += '<button class="btn btn-secondary btn-sm" onclick="Admin.navigate(\'form\', \'' + m.id + '\')">Lanjutkan</button> ';
+      }
+      if (flags.can_delete) {
+        actionBtns += '<button class="btn btn-danger btn-sm" onclick="Admin.confirmDeleteMeeting(\'' + m.id + '\')">Hapus</button> ';
+      }
+      if (flags.can_view_detail) {
+        actionBtns += '<button class="btn btn-secondary btn-sm" onclick="Admin.navigate(\'detail\', \'' + m.id + '\')">Lihat Detail</button> ';
+      }
+      if (flags.can_cancel) {
+        actionBtns += '<button class="btn btn-danger btn-sm" onclick="Admin.openCancelMeetingModal(\'' + m.id + '\')">Batalkan Rapat</button> ';
+      }
+      if (flags.show_report_btn) {
+        actionBtns += '<button class="btn btn-primary btn-sm" onclick="Admin.openReportModal(\'' + m.id + '\')">Rekap Presensi</button> ';
+      }
+      if (flags.show_cancel_reason && m.cancel_reason) {
+        actionBtns += '<div style="font-size:11px; color:var(--danger); margin-top:4px; max-width:200px; text-align:right;">Alasan: ' + (m.cancel_reason.length > 40 ? m.cancel_reason.slice(0, 40) + '...' : m.cancel_reason) + '</div>';
       }
 
       var unitsText = (m.unit && m.unit.length) ? m.unit.slice(0, 2).join(', ') + (m.unit.length > 2 ? ' +' + (m.unit.length - 2) : '') : '-';
@@ -360,7 +397,7 @@
   };
 
   /* ==========================================================================
-     VIEW: FORM RAPAT (PESERTA SESUAI KOMISI, TOMBOL BAWAH, CEK KUORUM DI BTN)
+     VIEW: FORM RAPAT (TRD v1.1: Filter Unit Tipe, Penarikan Peserta & Kuorum)
      ========================================================================== */
   Admin.renderFormView = function (container, draftId) {
     var draft = draftId ? Store.getMeetingById(draftId) : null;
@@ -368,13 +405,14 @@
 
     var defaultKode = isEdit ? draft.kodeRapat : 'RPT-2026-' + String(Math.floor(Math.random() * 900) + 100);
     var defaultNama = isEdit ? draft.namaRapat : '';
-    var defaultJenis = isEdit ? draft.jenisRapat : 'Komisi I';
+    var defaultJenis = isEdit ? draft.jenisRapat : 'Rapat Komisi';
     var defaultLokasi = isEdit ? draft.lokasi : 'Ruang Rapat Komisi I DPRD Kota Magelang';
     var defaultTanggal = isEdit ? draft.tanggal : '2026-11-20';
     var defaultMulai = isEdit ? draft.jamMulai : '10:00';
     var defaultSelesai = isEdit ? draft.jamSelesai : '12:00';
     var defaultDeskripsi = isEdit ? (draft.deskripsi || '') : '';
 
+    formState.selectedUnitType = 'ALL';
     formState.selectedUnits = isEdit ? (draft.unit || ['Komisi I']) : ['Komisi I'];
     formState.uploadedFiles = isEdit && draft.lampiran ? draft.lampiran.slice() : [
       { name: 'Surat_Undangan_Rapat.pdf', size: '820 KB' }
@@ -384,34 +422,34 @@
       '<div class="admin-topbar">' +
         '<div>' +
           '<h2>' + (isEdit ? 'Lanjutkan Draf Rapat' : 'Buat Jadwal Rapat Baru') + '</h2>' +
-          '<div class="admin-crumb"><a href="#" onclick="Admin.confirmLeaveForm(); return false;">Jadwal Rapat</a> › ' + (isEdit ? 'Edit Draf' : 'Form Buat Rapat') + '</div>' +
+          '<div class="admin-crumb"><a href="#" onclick="Admin.confirmLeaveForm(); return false;">Jadwal Rapat</a> › ' + (isEdit ? 'Edit Draf' : 'Form Buat Rapat') + ' (TRD v1.1)</div>' +
         '</div>' +
       '</div>' +
 
       '<div class="admin-content">' +
         '<div class="info-box" style="background:#e8f4ec; border:1px solid #bce1c7; padding:12px 16px; border-radius:8px; margin-bottom:18px; font-size:12.5px; display:flex; gap:10px; align-items:center;">' +
           '<svg class="ic-svg" viewBox="0 0 24 24" style="color:var(--green);"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>' +
-          '<span>Daftar peserta otomatis menyesuaikan komisi / unit yang dipilih. Pengecekan <strong>Kuorum ⅔</strong> akan dievaluasi saat Anda menekan tombol <strong>Jadwalkan Rapat</strong> di bagian bawah.</span>' +
+          '<span>Daftar peserta ditarik melalui <code>user_assignments</code> (Periode Aktif) dengan <strong>Deduplikasi Peserta</strong>. Syarat kuorum ⅔ dihitung interaktif dan divalidasi ketat saat tombol <strong>Jadwalkan Rapat</strong> ditekan.</span>' +
         '</div>' +
 
         '<form id="meetingForm" onsubmit="return false;">' +
 
           // CARD 1: INFORMASI RAPAT
           '<div class="card">' +
-            '<div class="form-section-title">Informasi Rapat</div>' +
-            '<div class="form-section-hint">Detail dasar identitas dan unit penyelenggara rapat.</div>' +
+            '<div class="form-section-title">1. Informasi Rapat</div>' +
+            '<div class="form-section-hint">Identitas rapat dan master klasifikasi sesuai 15 jenis rapat DPRD Kota Magelang.</div>' +
 
             '<div class="form-grid-2">' +
               '<div class="form-group">' +
                 '<label>Kode Rapat <span class="req">*</span></label>' +
                 '<input type="text" id="fKodeRapat" value="' + defaultKode + '" placeholder="Contoh: RPT-2026-001" required>' +
-                '<div class="field-hint">Wajib, manual, dan unik. Kode dibatalkan tetap terpakai.</div>' +
+                '<div class="field-hint">Wajib, unik, tidak bisa di-reuse meski rapat BATAL.</div>' +
               '</div>' +
               '<div class="form-group">' +
-                '<label>Jenis Rapat (15 Opsi) <span class="req">*</span></label>' +
+                '<label>Jenis Rapat (15 Opsi Seeder Tetap) <span class="req">*</span></label>' +
                 '<select id="fJenisRapat" required>' +
                   Rules.JENIS_RAPAT.map(function (j) {
-                    return '<option value="' + j + '" ' + (j === defaultJenis ? 'selected' : '') + '>' + j + '</option>';
+                    return '<option value="' + j.name + '" ' + (j.name === defaultJenis ? 'selected' : '') + '>' + j.name + '</option>';
                   }).join('') +
                 '</select>' +
               '</div>' +
@@ -422,36 +460,49 @@
               '<input type="text" id="fNamaRapat" value="' + defaultNama + '" placeholder="Contoh: Rapat Kerja Komisi I Evaluasi Pelayanan Publik" required>' +
             '</div>' +
 
-            '<div class="form-group">' +
-              '<label>Pilih Unit Kerja / Komisi Penyelenggara <span class="req">*</span></label>' +
-              '<div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:6px;" id="unitChipsContainer">' +
-                Rules.UNIT_OPTIONS.map(function (u) {
-                  var isSel = formState.selectedUnits.indexOf(u) !== -1;
-                  return '<button type="button" class="btn btn-sm ' + (isSel ? 'btn-primary' : 'btn-secondary') + '" data-unit="' + u + '">' + u + '</button>';
-                }).join('') +
+            // FILTER UNIT TIPE & UNIT ORGANISASI PERIODE AKTIF (TRD v1.1 Bagian 1.1)
+            '<div style="background:#f9f8f5; border:1px solid var(--border); border-radius:8px; padding:14px; margin-top:12px;">' +
+              '<div style="font-weight:700; font-size:13px; margin-bottom:8px; color:var(--ink);">Filter Unit Organisasi (Periode Aktif 2024–2029)</div>' +
+              '<div class="form-grid-2" style="margin-bottom:10px;">' +
+                '<div class="form-group" style="margin-bottom:0;">' +
+                  '<label>Pilih Unit Tipe (unit_types)</label>' +
+                  '<select id="fUnitTypeFilter">' +
+                    Rules.UNIT_TYPES.map(function (ut) {
+                      return '<option value="' + ut.code + '">' + ut.name + '</option>';
+                    }).join('') +
+                  '</select>' +
+                '</div>' +
+                '<div style="font-size:11.5px; color:var(--muted); display:flex; align-items:center;">' +
+                  'Pilih satu atau lebih unit organisasi di bawah ini. Peserta yang tercatat di beberapa unit akan otomatis di-deduplikasi menjadi 1 orang. ' +
+                '</div>' +
               '</div>' +
-              '<div class="field-hint">Klik untuk memilih unit. Contoh: Pilih <strong>Komisi I</strong> untuk rapat 10 orang, atau <strong>Rapat Paripurna</strong> untuk 100 orang.</div>' +
+
+              '<label style="font-size:12px; font-weight:600; color:var(--ink); margin-bottom:6px; display:block;">Unit Organisasi Terpilih (AKD / Setwan):</label>' +
+              '<div style="display:flex; flex-wrap:wrap; gap:8px;" id="unitChipsContainer"></div>' +
             '</div>' +
           '</div>' +
 
-          // CARD 2: PESERTA RAPAT (Sesuai Komisi / Unit Terpilih)
+          // CARD 2: CEK KUORUM INTERAKTIF & PESERTA RAPAT
           '<div class="card">' +
             '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">' +
-              '<div class="form-section-title">Peserta Rapat (<span id="unitPesertaCount">0</span> Anggota)</div>' +
+              '<div class="form-section-title">2. Peserta Rapat &amp; Cek Kuorum ⅔</div>' +
               '<div style="display:flex; gap:6px;">' +
                 '<button type="button" class="btn btn-secondary btn-sm" id="btnCheckAll">Pilih Semua</button>' +
                 '<button type="button" class="btn btn-secondary btn-sm" id="btnUncheckAll">Batal Pilih</button>' +
               '</div>' +
             '</div>' +
-            '<div class="form-section-hint">Tentukan anggota mana saja yang diundang menghadiri rapat ini. Anda dapat mencentang atau menghapus centang secara individual.</div>' +
+            '<div class="form-section-hint">Daftar anggota unik dimuat default tercentang. Deteksi bentrok keras (Hard Conflict) mengecek penugasan approved dan rapat lain dijadwalkan.</div>' +
+
+            // LIVE INTERACTIVE QUORUM BANNER (POST /api/v1/admin/meetings/check-quorum)
+            '<div id="interactiveQuorumBox" style="margin:12px 0;"></div>' +
 
             '<div class="table-container" style="max-height: 320px; overflow-y:auto; margin-top:8px;">' +
               '<table class="data-table">' +
                 '<thead><tr>' +
                   '<th style="width:40px;"><input type="checkbox" id="masterCheckbox" checked></th>' +
-                  '<th>Nama & Kode Anggota</th>' +
-                  '<th>Jabatan & Unit</th>' +
-                  '<th>Status Jadwal</th>' +
+                  '<th>Nama &amp; Kode Anggota</th>' +
+                  '<th>Jabatan &amp; Unit Organisasi</th>' +
+                  '<th>Status Jadwal (Bentrok)</th>' +
                 '</tr></thead>' +
                 '<tbody id="participantsTableBody"></tbody>' +
               '</table>' +
@@ -460,8 +511,8 @@
 
           // CARD 3: WAKTU & LOKASI PELAKSANAAN
           '<div class="card">' +
-            '<div class="form-section-title">Waktu &amp; Lokasi Pelaksanaan</div>' +
-            '<div class="form-section-hint">Jam mulai dan selesai digunakan sebagai jendela validasi presensi pada hari H.</div>' +
+            '<div class="form-section-title">3. Waktu &amp; Lokasi Pelaksanaan</div>' +
+            '<div class="form-section-hint">Waktu mulai dan selesai dalam 1 hari (WIB). Digunakan sebagai rentang validasi irisan bentrok dan jendela presensi QR.</div>' +
 
             '<div class="form-grid-3">' +
               '<div class="form-group">' +
@@ -491,8 +542,8 @@
 
           // CARD 4: LAMPIRAN SURAT UNDANGAN
           '<div class="card">' +
-            '<div class="form-section-title">Dokumen Surat Undangan</div>' +
-            '<div class="form-section-hint">Unggah surat undangan resmi yang dapat diakses oleh anggota dewan di aplikasi mobile.</div>' +
+            '<div class="form-section-title">4. Dokumen Surat Undangan</div>' +
+            '<div class="form-section-hint">Maksimal 10 berkas @ 10 MB (JPG, PNG, DOC, DOCX, PDF, XLSX).</div>' +
 
             '<div class="upload-drop-zone" id="dropZone">' +
               '<input type="file" id="fFileUpload" multiple accept=".jpg,.jpeg,.png,.doc,.docx,.pdf,.xlsx" style="display:none;">' +
@@ -522,29 +573,13 @@
         '</form>' +
       '</div>';
 
-    // Unit toggle
-    var unitBtns = container.querySelectorAll('#unitChipsContainer button');
-    unitBtns.forEach(function (btn) {
-      btn.onclick = function () {
-        var u = btn.getAttribute('data-unit');
-        var idx = formState.selectedUnits.indexOf(u);
-        if (idx !== -1) {
-          if (formState.selectedUnits.length > 1) {
-            formState.selectedUnits.splice(idx, 1);
-            btn.classList.remove('btn-primary');
-            btn.classList.add('btn-secondary');
-          } else {
-            Admin.showToast('Pilih minimal satu unit kerja / komisi.');
-            return;
-          }
-        } else {
-          formState.selectedUnits.push(u);
-          btn.classList.remove('btn-secondary');
-          btn.classList.add('btn-primary');
-        }
-        Admin.refreshFormParticipants(draft ? draft.peserta : null);
-      };
-    });
+    // Render Chips Unit Organisasi berdasarkan Filter Unit Tipe
+    Admin.renderUnitChips();
+
+    document.getElementById('fUnitTypeFilter').onchange = function (e) {
+      formState.selectedUnitType = e.target.value;
+      Admin.renderUnitChips();
+    };
 
     // Check all / uncheck all
     document.getElementById('btnCheckAll').onclick = function () {
@@ -553,6 +588,7 @@
         c.checked = true;
         formState.checkedParticipants[c.getAttribute('data-mid')] = true;
       });
+      Admin.refreshInteractiveQuorum();
     };
     document.getElementById('btnUncheckAll').onclick = function () {
       var chks = container.querySelectorAll('.part-chk');
@@ -560,6 +596,7 @@
         c.checked = false;
         formState.checkedParticipants[c.getAttribute('data-mid')] = false;
       });
+      Admin.refreshInteractiveQuorum();
     };
     document.getElementById('masterCheckbox').onchange = function (e) {
       var val = e.target.checked;
@@ -568,9 +605,10 @@
         c.checked = val;
         formState.checkedParticipants[c.getAttribute('data-mid')] = val;
       });
+      Admin.refreshInteractiveQuorum();
     };
 
-    // Date changes refresh conflict indicators
+    // Date changes refresh conflict indicators & quorum
     document.getElementById('fTanggal').onchange = function () { Admin.refreshFormParticipants(); };
     document.getElementById('fJamMulai').onchange = function () { Admin.refreshFormParticipants(); };
     document.getElementById('fJamSelesai').onchange = function () { Admin.refreshFormParticipants(); };
@@ -595,53 +633,104 @@
   };
 
   /**
-   * Refresh daftar peserta form berdasarkan unit/komisi yang dipilih
+   * Render Unit Chips sesuai Unit Tipe Terpilih
+   */
+  Admin.renderUnitChips = function () {
+    var container = document.getElementById('unitChipsContainer');
+    if (!container) return;
+
+    var curType = formState.selectedUnitType;
+    var filteredUnits = Rules.ORGANIZATION_UNITS.filter(function (ou) {
+      if (curType === 'ALL') return true;
+      return ou.typeCode === curType;
+    });
+
+    var html = '';
+    filteredUnits.forEach(function (ou) {
+      var isSel = formState.selectedUnits.indexOf(ou.name) !== -1;
+      html += '<button type="button" class="btn btn-sm ' + (isSel ? 'btn-primary' : 'btn-secondary') + '" data-unit="' + ou.name + '">' + ou.name + '</button>';
+    });
+
+    container.innerHTML = html;
+
+    container.querySelectorAll('button[data-unit]').forEach(function (btn) {
+      btn.onclick = function () {
+        var u = btn.getAttribute('data-unit');
+        var idx = formState.selectedUnits.indexOf(u);
+        if (idx !== -1) {
+          if (formState.selectedUnits.length > 1) {
+            formState.selectedUnits.splice(idx, 1);
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-secondary');
+          } else {
+            Admin.showToast('Pilih minimal satu unit organisasi.');
+            return;
+          }
+        } else {
+          formState.selectedUnits.push(u);
+          btn.classList.remove('btn-secondary');
+          btn.classList.add('btn-primary');
+        }
+        Admin.refreshFormParticipants();
+      };
+    });
+  };
+
+  /**
+   * Refresh daftar peserta form & jalankan cek kuorum interaktif
    */
   Admin.refreshFormParticipants = function (preferredCheckedIds) {
     var tbody = document.getElementById('participantsTableBody');
-    var countEl = document.getElementById('unitPesertaCount');
     if (!tbody) return;
-
-    var matchedMembers = Store.getMembersByUnits(formState.selectedUnits);
-    if (countEl) countEl.textContent = matchedMembers.length;
 
     var tanggal = document.getElementById('fTanggal').value;
     var jamMulai = document.getElementById('fJamMulai').value;
     var jamSelesai = document.getElementById('fJamSelesai').value;
-    var candidate = { tanggal: tanggal, jamMulai: jamMulai, jamSelesai: jamSelesai };
 
-    var rowsHtml = '';
-    matchedMembers.forEach(function (member) {
+    var matchedMembers = Store.getMembersByUnits(formState.selectedUnits);
+
+    var selectedIds = [];
+    matchedMembers.forEach(function (m) {
       var isChecked = true;
       if (preferredCheckedIds) {
-        isChecked = preferredCheckedIds.indexOf(member.id) !== -1;
-      } else if (formState.checkedParticipants[member.id] !== undefined) {
-        isChecked = formState.checkedParticipants[member.id];
+        isChecked = preferredCheckedIds.indexOf(m.id) !== -1;
+      } else if (formState.checkedParticipants[m.id] !== undefined) {
+        isChecked = formState.checkedParticipants[m.id];
       }
-      formState.checkedParticipants[member.id] = isChecked;
+      formState.checkedParticipants[m.id] = isChecked;
+      if (isChecked) selectedIds.push(m.id);
+    });
 
-      var acts = Store.getActivitiesForMember(member.id);
-      var res = Rules.evaluateParticipantActivities(candidate, acts);
+    // Simulasi Request API POST /api/v1/admin/meetings/check-quorum
+    var qRes = Store.checkQuorum({
+      unit_ids: formState.selectedUnits,
+      selected_user_ids: selectedIds,
+      meeting_date: tanggal,
+      start_time: jamMulai,
+      end_time: jamSelesai
+    });
 
+    Admin.renderInteractiveQuorumBanner(qRes.data);
+
+    var rowsHtml = '';
+    qRes.data.participants.forEach(function (p) {
       var statusBadge = '';
-      if (res.hasConflict) {
-        statusBadge = '<span class="badge badge-danger">' + res.conflictDetails[0].keterangan + '</span>';
-      } else if (res.hasWarning) {
-        statusBadge = '<span class="badge badge-warn">' + res.warningDetails[0].keterangan + '</span>';
+      if (p.has_conflict) {
+        statusBadge = '<span class="badge badge-danger">' + (p.conflict_label || 'Sudah ada jadwal bentrok') + '</span>';
       } else {
         statusBadge = '<span style="color:var(--muted); font-size:11.5px;">Tersedia (Bersih)</span>';
       }
 
       rowsHtml +=
         '<tr>' +
-          '<td><input type="checkbox" class="part-chk" data-mid="' + member.id + '" ' + (isChecked ? 'checked' : '') + '></td>' +
+          '<td><input type="checkbox" class="part-chk" data-mid="' + p.user_id + '" ' + (p.is_checked ? 'checked' : '') + '></td>' +
           '<td>' +
-            '<div style="font-weight:700;">' + member.nama + '</div>' +
-            '<div style="font-family:monospace; font-size:11px; color:var(--muted);">' + member.kode + '</div>' +
+            '<div style="font-weight:700;">' + p.name + '</div>' +
+            '<div style="font-family:monospace; font-size:11px; color:var(--muted);">' + p.member_code + '</div>' +
           '</td>' +
           '<td>' +
-            '<span class="tag-unit">' + member.unit + '</span>' +
-            '<div style="font-size:11px; color:var(--muted); margin-top:2px;">' + member.fraksi + '</div>' +
+            '<span class="tag-unit">' + p.unit_name + '</span>' +
+            '<div style="font-size:11px; color:var(--muted); margin-top:2px;">' + p.position_name + '</div>' +
           '</td>' +
           '<td>' + statusBadge + '</td>' +
         '</tr>';
@@ -653,8 +742,62 @@
       chk.onchange = function () {
         var mid = chk.getAttribute('data-mid');
         formState.checkedParticipants[mid] = chk.checked;
+        Admin.refreshInteractiveQuorum();
       };
     });
+  };
+
+  Admin.refreshInteractiveQuorum = function () {
+    var tanggal = document.getElementById('fTanggal').value;
+    var jamMulai = document.getElementById('fJamMulai').value;
+    var jamSelesai = document.getElementById('fJamSelesai').value;
+
+    var matchedMembers = Store.getMembersByUnits(formState.selectedUnits);
+    var selectedIds = [];
+    matchedMembers.forEach(function (m) {
+      if (formState.checkedParticipants[m.id]) {
+        selectedIds.push(m.id);
+      }
+    });
+
+    var qRes = Store.checkQuorum({
+      unit_ids: formState.selectedUnits,
+      selected_user_ids: selectedIds,
+      meeting_date: tanggal,
+      start_time: jamMulai,
+      end_time: jamSelesai
+    });
+
+    Admin.renderInteractiveQuorumBanner(qRes.data);
+  };
+
+  /**
+   * Render Banner Hasil Cek Kuorum Interaktif (TRD v1.1 Hal 14-15)
+   */
+  Admin.renderInteractiveQuorumBanner = function (qData) {
+    var box = document.getElementById('interactiveQuorumBox');
+    if (!box) return;
+
+    var isMet = qData.is_quorum_met;
+    var bg = isMet ? '#eaf8ef' : '#fdf2f2';
+    var border = isMet ? '#bce1c7' : '#f5c6c6';
+    var color = isMet ? 'var(--success)' : 'var(--danger)';
+
+    box.innerHTML =
+      '<div style="background:' + bg + '; border:1px solid ' + border + '; border-radius:8px; padding:12px 16px;">' +
+        '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">' +
+          '<div style="display:flex; align-items:center; gap:8px;">' +
+            '<span style="font-size:20px;">' + (isMet ? '✅' : '⚠️') + '</span>' +
+            '<div>' +
+              '<div style="font-weight:800; font-size:13.5px; color:' + color + ';">' + qData.banner_message + '</div>' +
+              '<div style="font-size:11.5px; color:var(--muted); margin-top:2px;">Kalkulasi: N = ' + qData.total_invited + ' | Syarat Kuorum = ⌈2/3 × ' + qData.total_invited + '⌉ = ' + qData.quorum_required + ' | Bentrok = ' + qData.conflict_unique_count + ' | Tersedia = ' + qData.available_count + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div style="font-size:12px; font-weight:700; color:' + color + '; padding:4px 10px; background:rgba(255,255,255,0.8); border-radius:4px; border:1px solid ' + border + ';">' +
+            (isMet ? 'KUORUM TERPENUHI' : 'KUORUM BELUM TERPENUHI') +
+          '</div>' +
+        '</div>' +
+      '</div>';
   };
 
   Admin.handleFilesUpload = function (files) {
@@ -711,7 +854,7 @@
 
   /**
    * Submit Rapat (Simpan Draft vs Jadwalkan)
-   * Kuorum HANYA dicek saat klik 'Jadwalkan Rapat'!
+   * Validasi Kuorum 2/3 memblokir submit jika GAGAL (HTTP 422 QUORUM_NOT_MET)
    */
   Admin.submitMeetingForm = function (actionStatus) {
     var kode = (document.getElementById('fKodeRapat').value || '').trim();
@@ -734,54 +877,21 @@
       return;
     }
     if (Store.isMeetingCodeTaken(kode, editingDraftId)) {
-      alert('Kode rapat "' + kode + '" sudah digunakan atau pernah dibatalkan.');
+      alert('Kode rapat "' + kode + '" sudah digunakan atau pernah dibatalkan (Unique Constraint).');
       return;
     }
 
-    // Anggota tercentang dari unit terpilih
     var matchedMembers = Store.getMembersByUnits(formState.selectedUnits);
     var selectedPeserta = [];
-    var bentrokUnik = 0;
-    var candidate = { tanggal: tanggal, jamMulai: jamMulai, jamSelesai: jamSelesai };
-
     matchedMembers.forEach(function (m) {
       if (formState.checkedParticipants[m.id]) {
         selectedPeserta.push(m.id);
-        var acts = Store.getActivitiesForMember(m.id);
-        var res = Rules.evaluateParticipantActivities(candidate, acts);
-        if (res.hasConflict) bentrokUnik++;
       }
     });
 
     if (selectedPeserta.length === 0) {
       alert('Pilih minimal satu peserta rapat.');
       return;
-    }
-
-    var N = selectedPeserta.length;
-    var qResult = Rules.calculateQuorum(N, bentrokUnik);
-
-    // KETIKA JADWALKAN: Cek kuorum 2/3 dan tampilkan pop up hasil pengecekan
-    if (actionStatus === 'Dijadwalkan') {
-      if (!qResult.lolos) {
-        // GAGAL KUORUM
-        Admin.showModalNotice(
-          'Pengecekan Kuorum GAGAL!',
-          '<div style="text-align:center; padding:10px 0;">' +
-            '<div style="font-size:44px; margin-bottom:8px;">❌</div>' +
-            '<div style="font-weight:800; font-size:16px; color:var(--danger); margin-bottom:8px;">Syarat ⅔ Kuorum Tidak Terpenuhi</div>' +
-            '<div style="font-size:13px; color:var(--ink); line-height:1.6; text-align:left; background:#fdf2f2; padding:12px; border-radius:8px; border:1px solid #f6c0c0;">' +
-              '<div>• Peserta Terpilih (N): <strong>' + qResult.N + ' Anggota</strong></div>' +
-              '<div>• Syarat Minimal Tersedia: <strong>' + qResult.syarat + ' Anggota</strong></div>' +
-              '<div>• Anggota Bentrok Jadwal: <strong style="color:var(--danger);">' + qResult.bentrokUnik + ' Anggota</strong></div>' +
-              '<div>• Anggota Tersedia: <strong style="color:var(--danger);">' + qResult.tersedia + ' Anggota</strong> (&lt; ' + qResult.syarat + ')</div>' +
-            '</div>' +
-            '<div style="font-size:12px; color:var(--muted); margin-top:10px;">Rapat tidak dapat dijadwalkan karena peserta tersedia kurang dari syarat kuorum. Silakan simpan sebagai Draft atau sesuaikan jadwal rapat.</div>' +
-          '</div>',
-          'Tutup'
-        );
-        return;
-      }
     }
 
     var meetingObj = {
@@ -800,10 +910,28 @@
       status: actionStatus
     };
 
-    var saved = Store.saveMeeting(meetingObj);
+    var saveRes = Store.saveMeeting(meetingObj);
+
+    if (!saveRes.success) {
+      // 422 Unprocessable Entity - QUORUM_NOT_MET (TRD v1.1 Hal 16)
+      Admin.showModalNotice(
+        '422 Unprocessable Entity (Kuorum Gagal)',
+        '<div style="text-align:center; padding:10px 0;">' +
+          '<div style="font-size:44px; margin-bottom:8px;">❌</div>' +
+          '<div style="font-weight:800; font-size:16px; color:var(--danger); margin-bottom:8px;">' + saveRes.error_code + '</div>' +
+          '<div style="font-size:13px; color:var(--ink); line-height:1.6; text-align:left; background:#fdf2f2; padding:12px; border-radius:8px; border:1px solid #f6c0c0;">' +
+            saveRes.message +
+          '</div>' +
+          '<div style="font-size:12px; color:var(--muted); margin-top:10px;">Proses submit diblokir. Silakan simpan sebagai Draft atau sesuaikan waktu rapat agar anggota tidak bentrok.</div>' +
+        '</div>',
+        'Tutup'
+      );
+      return;
+    }
+
+    var saved = saveRes.data;
 
     if (actionStatus === 'Dijadwalkan') {
-      // LOLOS KUORUM & BERHASIL DIJADWALKAN
       Admin.showModalNotice(
         'Rapat Berhasil Dijadwalkan!',
         '<div style="text-align:center; padding:10px 0;">' +
@@ -811,13 +939,13 @@
           '<div style="font-weight:800; font-size:16px; color:var(--success); margin-bottom:8px;">Lolos Pengecekan ⅔ Kuorum Rapat</div>' +
           '<div style="font-size:13px; color:var(--ink); line-height:1.6; text-align:left; background:#eaf8ef; padding:12px; border-radius:8px; border:1px solid #bce1c7;">' +
             '<div>• Nama Rapat: <strong>' + saved.namaRapat + '</strong></div>' +
-            '<div>• Peserta Terpilih (N): <strong>' + qResult.N + ' Anggota</strong></div>' +
-            '<div>• Syarat Minimal Kuorum: <strong>' + qResult.syarat + ' Anggota</strong></div>' +
-            '<div>• Peserta Tersedia: <strong style="color:var(--success);">' + qResult.tersedia + ' Anggota</strong> (&ge; ' + qResult.syarat + ')</div>' +
-            '<div>• Bentrok Unik: <strong>' + qResult.bentrokUnik + ' Anggota</strong></div>' +
-            '<div>• Status Kuorum: <strong style="color:var(--success); font-weight:800;">LOLOS TERPENUHI</strong></div>' +
+            '<div>• Total Peserta (N): <strong>' + saved.total_invited + ' Anggota</strong></div>' +
+            '<div>• Syarat Minimal Kuorum: <strong>' + saved.quorum_required + ' Anggota</strong></div>' +
+            '<div>• Peserta Tersedia: <strong style="color:var(--success);">' + saved.available_count + ' Anggota</strong></div>' +
+            '<div>• Bentrok Jadwal: <strong>' + saved.conflict_count + ' Anggota</strong></div>' +
+            '<div>• Token QR: <code style="font-size:11px;">' + (saved.qr_token_hash || 'Tersedia') + '</code></div>' +
           '</div>' +
-          '<div style="font-size:12px; color:var(--muted); margin-top:10px;">Notifikasi undangan dan kode QR presensi otomatis diterbitkan untuk para peserta.</div>' +
+          '<div style="font-size:12px; color:var(--muted); margin-top:10px;">Notifikasi FCM &amp; In-App otomatis dikirimkan ke seluruh anggota dewan terpilih.</div>' +
         '</div>',
         'Buka Detail Rapat',
         function () {
@@ -831,7 +959,7 @@
   };
 
   /* ==========================================================================
-     VIEW: DETAIL RAPAT
+     VIEW: DETAIL RAPAT & PEMANTAUAN REAL-TIME
      ========================================================================== */
   Admin.renderMeetingDetail = function (meetingId) {
     var container = document.getElementById('adminViewContainer');
@@ -844,16 +972,17 @@
     }
 
     var now = Store.now();
-    var derived = Rules.deriveMeetingStatus(meeting, now);
+    var displayStatus = Rules.deriveDisplayStatus(meeting, now);
+    var flags = Rules.getActionFlags(meeting, now);
 
-    var isBatal = meeting.status === 'Batal';
-    var isSelesai = meeting.status === 'Selesai' || derived === 'Selesai';
+    var isBatal = (meeting.status === 'Batal' || displayStatus === 'BATAL');
+    var isSelesai = (meeting.status === 'Selesai' || displayStatus === 'SELESAI');
     var isDijadwalkan = !isBatal && !isSelesai;
 
     var headerBadge = '';
     if (isBatal) headerBadge = '<span class="badge badge-danger">Dibatalkan</span>';
     else if (isSelesai) headerBadge = '<span class="badge badge-neutral">Selesai</span>';
-    else if (derived === 'Berjalan') headerBadge = '<span class="badge badge-live">Sedang Berlangsung</span>';
+    else if (displayStatus === 'BERLANGSUNG') headerBadge = '<span class="badge badge-live">Sedang Berlangsung</span>';
     else headerBadge = '<span class="badge badge-info">Dijadwalkan</span>';
 
     var presMap = Store.getPresenceForMeeting(meeting.id);
@@ -887,9 +1016,9 @@
     var pctHadir = countTotal > 0 ? Math.round((countSudahPresensi / countTotal) * 100) : 0;
 
     var topbarActions = '';
-    if (isDijadwalkan || derived === 'Berjalan') {
+    if (flags.can_cancel) {
       topbarActions = '<button class="btn btn-danger" onclick="Admin.openCancelMeetingModal(\'' + meeting.id + '\')">Batalkan Rapat</button>';
-    } else if (isSelesai || isBatal) {
+    } else if (flags.show_report_btn) {
       topbarActions = '<button class="btn btn-primary" onclick="Admin.openReportModal(\'' + meeting.id + '\')"><svg class="ic-svg" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg> Laporan Rekapitulasi Presensi</button>';
     }
 
@@ -909,12 +1038,12 @@
         (isBatal ?
           '<div class="card bl-danger" style="background:#fff6f6; border-color:#f5c6c6; margin-bottom:18px;">' +
             '<div style="font-weight:700; color:var(--danger); font-size:14px;">Rapat Dibatalkan</div>' +
-            '<div style="font-size:13px; color:var(--ink); margin-top:4px;">Alasan: <strong>' + (meeting.alasanBatal || '-') + '</strong></div>' +
-            '<div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Dibatalkan oleh ' + (meeting.dibatalkanOleh || 'Admin Sekretariat') + ' · ' + (meeting.dibatalkanPada || '-') + '</div>' +
+            '<div style="font-size:13px; color:var(--ink); margin-top:4px;">Alasan: <strong>' + (meeting.cancel_reason || meeting.alasanBatal || '-') + '</strong></div>' +
+            '<div style="font-size:11.5px; color:var(--muted); margin-top:6px;">Dibatalkan oleh ' + (meeting.cancelled_by || meeting.dibatalkanOleh || 'Admin Sekretariat') + ' · ' + (meeting.cancelled_at || meeting.dibatalkanPada || '-') + '</div>' +
             (meeting.isBatalSaatBerlangsung ? '<div style="background:#eaf8ef; border:1px solid #bce1c7; padding:10px 14px; border-radius:6px; margin-top:10px; font-size:12.5px; color:var(--success); font-weight:700;">✓ Rapat ini dihentikan saat sedang berlangsung. Anggota dewan yang telah hadir dan melakukan scan presensi QR sebelum pembatalan tetap sah tercatat dalam arsip rekapitulasi di bawah ini.</div>' : '') +
           '</div>' : '') +
 
-        '<div style="display:grid; grid-template-columns: ' + (isDijadwalkan ? '2fr 1fr' : '1fr') + '; gap:18px; margin-bottom:18px;">' +
+        '<div style="display:grid; grid-template-columns: ' + (flags.show_qr ? '2fr 1fr' : '1fr') + '; gap:18px; margin-bottom:18px;">' +
 
           '<div class="card">' +
             '<div class="form-section-title" style="margin-bottom:12px;">Informasi Rapat</div>' +
@@ -924,7 +1053,7 @@
               '<div><span style="color:var(--muted);">Tanggal:</span> <strong>' + Rules.formatDateIndo(new Date(meeting.tanggal)) + '</strong></div>' +
               '<div><span style="color:var(--muted);">Waktu:</span> <strong>' + meeting.jamMulai + ' – ' + meeting.jamSelesai + ' WIB</strong></div>' +
               '<div><span style="color:var(--muted);">Lokasi:</span> <strong>' + (meeting.lokasi || 'DPRD Kota Magelang') + '</strong></div>' +
-              '<div><span style="color:var(--muted);">Peserta Rapat:</span> <strong>' + countTotal + ' Anggota</strong></div>' +
+              '<div><span style="color:var(--muted);">Peserta Rapat (N):</span> <strong>' + countTotal + ' Anggota</strong></div>' +
             '</div>' +
             (meeting.deskripsi ? '<div style="margin-top:14px; font-size:13px; color:#4a564e; padding-top:10px; border-top:1px dashed var(--border);"><span style="color:var(--muted);">Deskripsi:</span> ' + meeting.deskripsi + '</div>' : '') +
             (meeting.lampiran && meeting.lampiran.length ?
@@ -936,7 +1065,7 @@
               '</div>' : '') +
           '</div>' +
 
-          (isDijadwalkan ?
+          (flags.show_qr ?
             '<div class="card qr-display-box">' +
               '<div style="font-weight:700; font-size:14px; margin-bottom:4px;">QR Code Presensi Rapat</div>' +
               '<div style="font-size:11.5px; color:var(--muted); margin-bottom:12px;">Berlaku sampai jam selesai (' + meeting.jamSelesai + ' WIB)</div>' +
@@ -950,7 +1079,7 @@
         '</div>' +
 
         '<div class="stats-grid-mini">' +
-          '<div class="stat-mini-card"><div class="num">' + countTotal + '</div><div class="lbl">Diundang</div></div>' +
+          '<div class="stat-mini-card"><div class="num">' + countTotal + '</div><div class="lbl">Diundang (N)</div></div>' +
           '<div class="stat-mini-card success"><div class="num">' + countHadir + '</div><div class="lbl">Hadir (Konfirmasi)</div></div>' +
           '<div class="stat-mini-card danger"><div class="num">' + countTidakHadir + '</div><div class="lbl">Tidak Hadir</div></div>' +
           '<div class="stat-mini-card info"><div class="num">' + countBelumKonfirmasi + '</div><div class="lbl">Belum Konfirmasi</div></div>' +
@@ -970,11 +1099,11 @@
             '<table class="data-table">' +
               '<thead><tr>' +
                 '<th style="width:40px;">No</th>' +
-                '<th>Nama Anggota</th>' +
-                '<th>Status Kehadiran</th>' +
-                '<th>Status Presensi</th>' +
+                '<th>Nama &amp; Kode Anggota</th>' +
+                '<th>Konfirmasi Hadir</th>' +
+                '<th>Status Presensi QR</th>' +
                 '<th>Waktu Presensi (WIB)</th>' +
-                '<th>Alasan Tidak Hadir</th>' +
+                '<th>Keterangan / Alasan</th>' +
               '</tr></thead>' +
               '<tbody>' +
                 participants.map(function (m, idx) {
@@ -1002,12 +1131,12 @@
                     '<td>' + (idx + 1) + '</td>' +
                     '<td>' +
                       '<div style="font-weight:700;">' + m.nama + '</div>' +
-                      '<div style="font-family:monospace; font-size:11px; color:var(--muted);">' + m.kode + '</div>' +
+                      '<div style="font-family:monospace; font-size:11px; color:var(--muted);">' + m.kode + ' · ' + m.unit + '</div>' +
                     '</td>' +
                     '<td>' + respBadge + '</td>' +
                     '<td>' + presBadge + '</td>' +
-                    '<td style="font-family:monospace;">' + (p.waktuPresensiStr || '-') + '</td>' +
-                    '<td style="color:' + (p.alasanTidakHadir ? 'var(--danger)' : 'var(--muted)') + ';">' + (p.alasanTidakHadir || '-') + '</td>' +
+                    '<td style="font-family:monospace; font-weight:600;">' + (p.waktuPresensiStr || '-') + '</td>' +
+                    '<td style="font-size:12px; color:' + (p.alasanTidakHadir ? 'var(--danger)' : 'var(--muted)') + ';">' + (p.alasanTidakHadir || (p.presensiStatus === 'Sudah presensi' ? 'Sah' : '-')) + '</td>' +
                   '</tr>';
                 }).join('') +
               '</tbody>' +
@@ -1017,85 +1146,112 @@
 
       '</div>';
 
-    if (isDijadwalkan) {
-      Admin.renderMeetingQRCode(meeting);
+    if (flags.show_qr) {
+      Admin.renderMeetingQRCanvas(meeting);
     }
   };
 
-  Admin.renderMeetingQRCode = function (meeting) {
+  Admin.renderMeetingQRCanvas = function (meeting) {
     var holder = document.getElementById('adminQrHolder');
-    var tokenHolder = document.getElementById('qrTokenString');
+    var tokenStrEl = document.getElementById('qrTokenString');
     if (!holder) return;
 
     holder.innerHTML = '';
-    var tokenData = Store.generateQRToken(meeting);
-    if (!tokenData) return;
-
-    if (tokenHolder) {
-      tokenHolder.textContent = 'Token: ' + tokenData.token.substring(0, 18) + '...';
+    var qrData = Store.generateQRToken(meeting);
+    if (!qrData) {
+      holder.innerHTML = '<div style="color:var(--muted); font-size:12px;">QR tidak aktif</div>';
+      return;
     }
 
     if (window.QRCode) {
       new QRCode(holder, {
-        text: tokenData.token,
+        text: qrData.qrText,
         width: 170,
         height: 170,
         colorDark: '#0f2318',
         colorLight: '#ffffff'
       });
     } else {
-      holder.innerHTML = '<div style="width:170px; height:170px; display:flex; align-items:center; justify-content:center; background:#f0f0ea; border:1px solid #ccc; font-size:11px; padding:10px; text-align:center;">QR Presensi<br><strong>' + meeting.kodeRapat + '</strong></div>';
+      holder.innerHTML = '<div style="width:170px; height:170px; background:#eee; display:flex; align-items:center; justify-content:center; font-family:monospace; font-size:10px;">[QR CODE ' + meeting.kodeRapat + ']</div>';
+    }
+
+    if (tokenStrEl) {
+      tokenStrEl.textContent = meeting.kodeRapat + ' · Exp ' + meeting.jamSelesai + ' WIB';
     }
   };
 
   Admin.refreshMeetingQR = function (meetingId) {
-    var meeting = Store.getMeetingById(meetingId);
-    if (meeting) {
-      Admin.renderMeetingQRCode(meeting);
+    var m = Store.getMeetingById(meetingId);
+    if (m) {
+      Admin.renderMeetingQRCanvas(m);
       Admin.showToast('QR Code diperbarui');
     }
   };
 
+  /* ==========================================================================
+     PEMBATALAN RAPAT (TRD v1.1 Hal 17: Sebelum & Saat Berlangsung)
+     ========================================================================== */
   Admin.openCancelMeetingModal = function (meetingId) {
     var meeting = Store.getMeetingById(meetingId);
     if (!meeting) return;
 
+    var now = Store.now();
+    var displayStatus = Rules.deriveDisplayStatus(meeting, now);
+    var isOngoing = (displayStatus === 'BERLANGSUNG');
+
+    var alertNotice = isOngoing
+      ? '<div style="background:#fff3cd; border:1px solid #ffeeba; color:#856404; padding:10px 12px; border-radius:6px; margin-bottom:12px; font-size:12px;">' +
+          '<strong>Perhatian Pembatalan Darurat:</strong> Rapat ini sedang berlangsung. Anggota dewan yang sudah hadir dan melakukan scan presensi QR tetap sah tercatat sebagai arsip rekapitulasi.' +
+        '</div>'
+      : '';
+
     var modalHtml =
-      '<div class="modal-backdrop" id="cancelModal">' +
+      '<div class="modal-backdrop" id="cancelMeetingModal">' +
         '<div class="modal-card">' +
           '<div class="modal-header">' +
-            '<h3>Batalkan Rapat</h3>' +
-            '<button type="button" class="modal-close" onclick="Admin.closeModal(\'cancelModal\')">&times;</button>' +
+            '<h3 style="margin:0; font-size:16px; color:var(--danger);">Batalkan Rapat</h3>' +
+            '<button type="button" class="modal-close" onclick="Admin.closeModal(\'cancelMeetingModal\')">&times;</button>' +
           '</div>' +
           '<div class="modal-body">' +
-            '<p style="margin-top:0;">Anda akan membatalkan rapat <strong>' + meeting.namaRapat + '</strong> (' + meeting.kodeRapat + '). Seluruh peserta akan menerima pemberitahuan pembatalan.</p>' +
+            alertNotice +
+            '<div style="font-size:13px; color:var(--ink); margin-bottom:10px;">' +
+              'Anda akan membatalkan rapat <strong>' + meeting.namaRapat + '</strong> (' + meeting.kodeRapat + '). Kode rapat tidak dapat digunakan ulang.' +
+            '</div>' +
             '<div class="form-group">' +
               '<label>Alasan Pembatalan <span class="req">* (Wajib diisi)</span></label>' +
-              '<textarea id="mAlasanBatal" placeholder="Tuliskan alasan pembatalan rapat..." required></textarea>' +
+              '<textarea id="txtCancelReason" placeholder="Masukkan alasan resmi pembatalan rapat..." rows="3" required></textarea>' +
             '</div>' +
           '</div>' +
           '<div class="modal-footer">' +
-            '<button type="button" class="btn btn-secondary" onclick="Admin.closeModal(\'cancelModal\')">Kembali</button>' +
-            '<button type="button" class="btn btn-danger-solid" id="btnConfirmCancel">Konfirmasi Batalkan</button>' +
+            '<button type="button" class="btn btn-secondary" onclick="Admin.closeModal(\'cancelMeetingModal\')">Kembali</button>' +
+            '<button type="button" class="btn btn-danger" id="btnConfirmCancelMeeting">Konfirmasi Batalkan</button>' +
           '</div>' +
         '</div>' +
       '</div>';
 
     document.body.insertAdjacentHTML('beforeend', modalHtml);
 
-    document.getElementById('btnConfirmCancel').onclick = function () {
-      var reason = (document.getElementById('mAlasanBatal').value || '').trim();
+    document.getElementById('btnConfirmCancelMeeting').onclick = function () {
+      var reason = (document.getElementById('txtCancelReason').value || '').trim();
       if (!reason) {
-        alert('Alasan pembatalan wajib diisi.');
+        alert('Alasan pembatalan rapat wajib diisi.');
         return;
       }
-      Store.cancelMeeting(meeting.id, reason, 'Admin Sekretariat');
-      Admin.closeModal('cancelModal');
-      Admin.showToast('Rapat telah dibatalkan.');
-      Admin.navigate('detail', meeting.id);
+
+      Store.cancelMeeting(meetingId, reason, 'Admin Sekretariat');
+      Admin.closeModal('cancelMeetingModal');
+      Admin.showToast('Rapat berhasil dibatalkan.');
+      if (currentView === 'detail') {
+        Admin.renderMeetingDetail(meetingId);
+      } else {
+        Admin.renderMeetingList();
+      }
     };
   };
 
+  /* ==========================================================================
+     VIEW: LAPORAN REKAPITULASI PRESENSI & EKSPOR EXCEL (.XLSX)
+     ========================================================================== */
   Admin.openReportModal = function (meetingId) {
     var meeting = Store.getMeetingById(meetingId);
     if (!meeting) return;
@@ -1139,7 +1295,7 @@
         '<div class="modal-card modal-card-lg">' +
           '<div class="modal-header">' +
             '<div>' +
-              '<h3 style="margin:0; font-size:16px;">Laporan Rekapitulasi Kehadiran & Presensi</h3>' +
+              '<h3 style="margin:0; font-size:16px;">Laporan Rekapitulasi Kehadiran &amp; Presensi</h3>' +
               '<div style="font-size:12px; color:var(--muted); margin-top:2px;">' + meeting.namaRapat + ' (' + meeting.kodeRapat + ')</div>' +
             '</div>' +
             '<button type="button" class="modal-close" onclick="Admin.closeModal(\'reportModal\')">&times;</button>' +
@@ -1160,7 +1316,7 @@
 
             '<div style="text-align:center; margin-bottom:18px;">' +
               '<h4 style="font-family:var(--font-title); font-size:15px; text-transform:uppercase; margin-bottom:4px; letter-spacing:0.5px;">LAPORAN REKAPITULASI KEHADIRAN ANGGOTA DEWAN</h4>' +
-              '<div style="font-size:12px; color:var(--muted);">Sistem Informasi e-Parlemen Manajemen Presensi & Kuorum Sidang</div>' +
+              '<div style="font-size:12px; color:var(--muted);">Sistem Informasi e-Parlemen Manajemen Presensi &amp; Kuorum Sidang</div>' +
             '</div>' +
 
             // INFORMASI RAPAT
@@ -1193,13 +1349,14 @@
               '</div>' +
             '</div>' +
 
-            // DAFTAR REKAPITULASI ANGGOTA (RESPONSIVE HORIZONTAL SCROLL TABLE)
-            '<div style="font-weight:700; font-size:13px; margin-bottom:8px;">Rincian Kehadiran & Presensi Anggota Dewan:</div>' +
+            // DAFTAR REKAPITULASI SESUAI TRD v1.1 Hal 16
+            '<div style="font-weight:700; font-size:13px; margin-bottom:8px;">Rincian Kehadiran &amp; Presensi Anggota Dewan:</div>' +
             '<div class="table-container" style="max-height:360px; overflow-y:auto; margin-bottom:16px;">' +
               '<table class="data-table">' +
                 '<thead><tr>' +
                   '<th style="width:40px;">No</th>' +
-                  '<th>Kode & Nama Anggota</th>' +
+                  '<th>Kode &amp; Nama Anggota</th>' +
+                  '<th>Jabatan &amp; Unit</th>' +
                   '<th>Konfirmasi Hadir</th>' +
                   '<th>Status Presensi QR</th>' +
                   '<th>Waktu Presensi (WIB)</th>' +
@@ -1233,6 +1390,10 @@
                         '<div style="font-weight:700;">' + m.nama + '</div>' +
                         '<div style="font-family:monospace; font-size:11px; color:var(--muted);">' + m.kode + '</div>' +
                       '</td>' +
+                      '<td>' +
+                        '<div style="font-weight:600; font-size:12px;">' + m.jabatan + '</div>' +
+                        '<div style="font-size:11px; color:var(--muted);">' + m.unit + '</div>' +
+                      '</td>' +
                       '<td>' + confBadge + '</td>' +
                       '<td>' + presBadge + '</td>' +
                       '<td style="font-family:monospace; font-weight:600;">' + (p.waktuPresensiStr || '-') + '</td>' +
@@ -1243,7 +1404,7 @@
               '</table>' +
             '</div>' +
 
-            // TANDA TANGAN / PENGESAHAN
+            // PENGESAHAN
             '<div style="display:flex; justify-content:flex-end; margin-top:20px; font-size:12.5px;">' +
               '<div style="text-align:center; min-width:240px;">' +
                 '<div>Kota Magelang, ' + Rules.formatDateIndo(new Date(meeting.tanggal)) + '</div>' +
@@ -1256,8 +1417,11 @@
           '</div>' +
           '<div class="modal-footer">' +
             '<button type="button" class="btn btn-secondary" onclick="Admin.closeModal(\'reportModal\')">Tutup</button>' +
+            '<button type="button" class="btn btn-success" onclick="Admin.downloadReportExcel(\'' + meeting.id + '\')">' +
+              '<svg class="ic-svg" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Download Excel (.xlsx)' +
+            '</button>' +
             '<button type="button" class="btn btn-primary" onclick="window.print()">' +
-              '<svg class="ic-svg" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg> Cetak / Export Rekapitulasi' +
+              '<svg class="ic-svg" viewBox="0 0 24 24"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg> Cetak / Export PDF' +
             '</button>' +
           '</div>' +
         '</div>' +
@@ -1266,113 +1430,219 @@
     document.body.insertAdjacentHTML('beforeend', modalHtml);
   };
 
+  Admin.escapeXml = function (str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  };
+
+  /**
+   * Ekspor Berkas Excel Rekapitulasi Presensi Rapat (Sesuai TRD v1.1 Hal 16)
+   */
+  Admin.downloadReportExcel = function (meetingId) {
+    var meeting = Store.getMeetingById(meetingId);
+    if (!meeting) return;
+
+    var presMap = Store.getPresenceForMeeting(meeting.id);
+    var allMembers = Store.getMembers();
+    var participants = allMembers.filter(function (m) {
+      return (meeting.peserta || []).indexOf(m.id) !== -1;
+    });
+
+    var derived = Rules.deriveDisplayStatus(meeting, Store.now());
+    var statusText = meeting.status === 'Batal' ? 'Dibatalkan' : (meeting.status === 'Selesai' || derived === 'SELESAI' ? 'Selesai' : 'Dijadwalkan');
+
+    var countHadir = 0;
+    var countTidakHadir = 0;
+    var countSudahPresensi = 0;
+    var countTerlambat = 0;
+
+    participants.forEach(function (m) {
+      var p = presMap[m.id] || {};
+      if (p.kehadiran === 'Hadir') countHadir++;
+      else if (p.kehadiran === 'Tidak hadir') countTidakHadir++;
+      if (p.presensiStatus === 'Sudah presensi') {
+        countSudahPresensi++;
+        if (p.lateMinutes > 0) countTerlambat++;
+      }
+    });
+
+    var rowsXml = '';
+    participants.forEach(function (m, idx) {
+      var p = presMap[m.id] || {};
+      var conf = p.kehadiran || 'Belum konfirmasi';
+      var presStatus = p.presensiStatus || 'Belum presensi';
+      var punctuality = (presStatus === 'Sudah presensi')
+        ? (p.lateMinutes > 0 ? 'Terlambat ' + p.lateMinutes + ' mnt' : 'Tepat Waktu')
+        : (conf === 'Tidak hadir' ? '-' : 'Tidak Presensi');
+      var wkt = p.waktuPresensiStr || '-';
+      var alasan = p.alasanTidakHadir || (presStatus === 'Sudah presensi' ? 'Hadir Sah' : '-');
+
+      rowsXml +=
+        '<Row>' +
+          '<Cell ss:StyleID="CellBorderCenter"><Data ss:Type="Number">' + (idx + 1) + '</Data></Cell>' +
+          '<Cell ss:StyleID="CellBorder"><Data ss:Type="String">' + Admin.escapeXml(m.kode) + '</Data></Cell>' +
+          '<Cell ss:StyleID="CellBorderBold"><Data ss:Type="String">' + Admin.escapeXml(m.nama) + '</Data></Cell>' +
+          '<Cell ss:StyleID="CellBorder"><Data ss:Type="String">' + Admin.escapeXml(m.jabatan) + '</Data></Cell>' +
+          '<Cell ss:StyleID="CellBorder"><Data ss:Type="String">' + Admin.escapeXml(m.unit) + '</Data></Cell>' +
+          '<Cell ss:StyleID="CellBorderCenter"><Data ss:Type="String">' + Admin.escapeXml(conf) + '</Data></Cell>' +
+          '<Cell ss:StyleID="CellBorderCenter"><Data ss:Type="String">' + Admin.escapeXml(punctuality) + '</Data></Cell>' +
+          '<Cell ss:StyleID="CellBorderCenter"><Data ss:Type="String">' + Admin.escapeXml(wkt) + '</Data></Cell>' +
+          '<Cell ss:StyleID="CellBorder"><Data ss:Type="String">' + Admin.escapeXml(alasan) + '</Data></Cell>' +
+        '</Row>';
+    });
+
+    var excelXml =
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<?mso-application progid="Excel.Sheet"?>' +
+      '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" ' +
+      ' xmlns:o="urn:schemas-microsoft-com:office:office" ' +
+      ' xmlns:x="urn:schemas-microsoft-com:office:excel" ' +
+      ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' +
+      '<Styles>' +
+        '<Style ss:ID="Default" ss:Name="Normal"><Font ss:FontName="Calibri" ss:Size="11" ss:Color="#000000"/></Style>' +
+        '<Style ss:ID="HeaderTitle"><Font ss:FontName="Calibri" ss:Size="14" ss:Bold="1" ss:Color="#0F2318"/><Alignment ss:Horizontal="Center"/></Style>' +
+        '<Style ss:ID="HeaderSub"><Font ss:FontName="Calibri" ss:Size="10" ss:Color="#555555"/><Alignment ss:Horizontal="Center"/></Style>' +
+        '<Style ss:ID="ColHeader"><Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#1B3A2B" ss:Pattern="Solid"/><Alignment ss:Horizontal="Center" ss:Vertical="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>' +
+        '<Style ss:ID="CellBorder"><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9D9D9"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9D9D9"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9D9D9"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9D9D9"/></Borders></Style>' +
+        '<Style ss:ID="CellBorderBold"><Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9D9D9"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9D9D9"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9D9D9"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9D9D9"/></Borders></Style>' +
+        '<Style ss:ID="CellBorderCenter"><Alignment ss:Horizontal="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9D9D9"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9D9D9"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9D9D9"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D9D9D9"/></Borders></Style>' +
+      '</Styles>' +
+      '<Worksheet ss:Name="Rekapitulasi Kehadiran">' +
+        '<Table>' +
+          '<Column ss:Width="30"/>' +
+          '<Column ss:Width="100"/>' +
+          '<Column ss:Width="160"/>' +
+          '<Column ss:Width="120"/>' +
+          '<Column ss:Width="120"/>' +
+          '<Column ss:Width="110"/>' +
+          '<Column ss:Width="120"/>' +
+          '<Column ss:Width="90"/>' +
+          '<Column ss:Width="180"/>' +
+          '<Row><Cell ss:MergeAcross="8" ss:StyleID="HeaderTitle"><Data ss:Type="String">LAPORAN REKAPITULASI KEHADIRAN ANGGOTA DEWAN</Data></Cell></Row>' +
+          '<Row><Cell ss:MergeAcross="8" ss:StyleID="HeaderSub"><Data ss:Type="String">DPRD KOTA MAGELANG · e-Parlemen Manajemen Kuorum &amp; Presensi</Data></Cell></Row>' +
+          '<Row/>' +
+          '<Row><Cell><Data ss:Type="String">Nama Rapat:</Data></Cell><Cell ss:MergeAcross="2"><Data ss:Type="String">' + Admin.escapeXml(meeting.namaRapat) + '</Data></Cell><Cell><Data ss:Type="String">Tingkat / Jenis:</Data></Cell><Cell ss:MergeAcross="3"><Data ss:Type="String">' + Admin.escapeXml(meeting.jenisRapat) + '</Data></Cell></Row>' +
+          '<Row><Cell><Data ss:Type="String">Hari, Tanggal:</Data></Cell><Cell ss:MergeAcross="2"><Data ss:Type="String">' + Admin.escapeXml(Rules.formatDateIndo(new Date(meeting.tanggal))) + '</Data></Cell><Cell><Data ss:Type="String">Waktu Sidang:</Data></Cell><Cell ss:MergeAcross="3"><Data ss:Type="String">' + meeting.jamMulai + ' - ' + meeting.jamSelesai + ' WIB</Data></Cell></Row>' +
+          '<Row><Cell><Data ss:Type="String">Lokasi:</Data></Cell><Cell ss:MergeAcross="2"><Data ss:Type="String">' + Admin.escapeXml(meeting.lokasi || 'DPRD Kota Magelang') + '</Data></Cell><Cell><Data ss:Type="String">Status Penyelenggaraan:</Data></Cell><Cell ss:MergeAcross="3"><Data ss:Type="String">' + statusText + '</Data></Cell></Row>' +
+          '<Row/>' +
+          '<Row>' +
+            '<Cell ss:StyleID="ColHeader"><Data ss:Type="String">NO</Data></Cell>' +
+            '<Cell ss:StyleID="ColHeader"><Data ss:Type="String">KODE ANGGOTA</Data></Cell>' +
+            '<Cell ss:StyleID="ColHeader"><Data ss:Type="String">NAMA ANGGOTA</Data></Cell>' +
+            '<Cell ss:StyleID="ColHeader"><Data ss:Type="String">JABATAN</Data></Cell>' +
+            '<Cell ss:StyleID="ColHeader"><Data ss:Type="String">UNIT ORGANISASI</Data></Cell>' +
+            '<Cell ss:StyleID="ColHeader"><Data ss:Type="String">KONFIRMASI KEHADIRAN</Data></Cell>' +
+            '<Cell ss:StyleID="ColHeader"><Data ss:Type="String">STATUS PRESENSI QR</Data></Cell>' +
+            '<Cell ss:StyleID="ColHeader"><Data ss:Type="String">WAKTU PRESENSI (WIB)</Data></Cell>' +
+            '<Cell ss:StyleID="ColHeader"><Data ss:Type="String">KETERANGAN / ALASAN</Data></Cell>' +
+          '</Row>' +
+          rowsXml +
+        '</Table>' +
+      '</Worksheet>' +
+      '</Workbook>';
+
+    var blob = new Blob([excelXml], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'Laporan_Rekapitulasi_Presensi_' + meeting.kodeRapat + '.xls';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    Admin.showToast('Berkas Excel presensi berhasil diunduh.');
+  };
+
+  /* ==========================================================================
+     MODAL UTILITIES
+     ========================================================================== */
+  Admin.showModalNotice = function (title, contentHtml, closeBtnText, onConfirm) {
+    var modalHtml =
+      '<div class="modal-backdrop" id="genericNoticeModal">' +
+        '<div class="modal-card">' +
+          '<div class="modal-header">' +
+            '<h3 style="margin:0; font-size:16px;">' + title + '</h3>' +
+            '<button type="button" class="modal-close" onclick="Admin.closeModal(\'genericNoticeModal\')">&times;</button>' +
+          '</div>' +
+          '<div class="modal-body">' + contentHtml + '</div>' +
+          '<div class="modal-footer">' +
+            '<button type="button" class="btn btn-primary" id="btnNoticeConfirm">' + (closeBtnText || 'Tutup') + '</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    document.getElementById('btnNoticeConfirm').onclick = function () {
+      Admin.closeModal('genericNoticeModal');
+      if (typeof onConfirm === 'function') onConfirm();
+    };
+  };
+
+  Admin.showConfirmModal = function (title, message, onYes) {
+    var modalHtml =
+      '<div class="modal-backdrop" id="genericConfirmModal">' +
+        '<div class="modal-card">' +
+          '<div class="modal-header">' +
+            '<h3 style="margin:0; font-size:16px;">' + title + '</h3>' +
+            '<button type="button" class="modal-close" onclick="Admin.closeModal(\'genericConfirmModal\')">&times;</button>' +
+          '</div>' +
+          '<div class="modal-body">' +
+            '<div style="font-size:13.5px; color:var(--ink);">' + message + '</div>' +
+          '</div>' +
+          '<div class="modal-footer">' +
+            '<button type="button" class="btn btn-secondary" onclick="Admin.closeModal(\'genericConfirmModal\')">Batal</button>' +
+            '<button type="button" class="btn btn-primary" id="btnConfirmYes">Ya, Lanjutkan</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    document.getElementById('btnConfirmYes').onclick = function () {
+      Admin.closeModal('genericConfirmModal');
+      if (typeof onYes === 'function') onYes();
+    };
+  };
+
   Admin.confirmDeleteMeeting = function (meetingId) {
     Admin.showConfirmModal(
-      'Hapus Draf Rapat',
-      'Apakah Anda yakin ingin menghapus draf rapat ini? Tindakan ini tidak dapat dibatalkan.',
+      'Hapus Rapat',
+      'Apakah Anda yakin ingin menghapus jadwal rapat ini? Tindakan ini tidak dapat dibatalkan.',
       function () {
         Store.deleteMeeting(meetingId);
-        Admin.showToast('Draf rapat berhasil dihapus.');
+        Admin.showToast('Rapat berhasil dihapus.');
         Admin.renderMeetingList();
       }
     );
   };
 
-  Admin.showModalNotice = function (title, contentHtml, btnText, onBtnClick) {
-    var modalHtml =
-      '<div class="modal-backdrop" id="noticeGenModal">' +
-        '<div class="modal-card">' +
-          '<div class="modal-header">' +
-            '<h3>' + title + '</h3>' +
-            '<button type="button" class="modal-close" onclick="Admin.closeModal(\'noticeGenModal\')">&times;</button>' +
-          '</div>' +
-          '<div class="modal-body">' + contentHtml + '</div>' +
-          '<div class="modal-footer">' +
-            '<button type="button" class="btn btn-primary" id="btnNoticeOk">' + (btnText || 'OK') + '</button>' +
-          '</div>' +
-        '</div>' +
-      '</div>';
-
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-    document.getElementById('btnNoticeOk').onclick = function () {
-      Admin.closeModal('noticeGenModal');
-      if (onBtnClick) onBtnClick();
-    };
-  };
-
-  Admin.showConfirmModal = function (title, message, onConfirm) {
-    var modalHtml =
-      '<div class="modal-backdrop" id="confirmGenModal">' +
-        '<div class="modal-card">' +
-          '<div class="modal-header">' +
-            '<h3>' + title + '</h3>' +
-            '<button type="button" class="modal-close" onclick="Admin.closeModal(\'confirmGenModal\')">&times;</button>' +
-          '</div>' +
-          '<div class="modal-body"><p style="margin:0;">' + message + '</p></div>' +
-          '<div class="modal-footer">' +
-            '<button type="button" class="btn btn-secondary" onclick="Admin.closeModal(\'confirmGenModal\')">Tidak</button>' +
-            '<button type="button" class="btn btn-primary" id="btnGenYes">Ya</button>' +
-          '</div>' +
-        '</div>' +
-      '</div>';
-
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-    document.getElementById('btnGenYes').onclick = function () {
-      Admin.closeModal('confirmGenModal');
-      if (onConfirm) onConfirm();
-    };
-  };
-
   Admin.closeModal = function (modalId) {
-    var el = document.getElementById(modalId);
-    if (el) el.remove();
+    var m = document.getElementById(modalId);
+    if (m) m.remove();
   };
 
-  Admin.showToast = function (message) {
+  Admin.showToast = function (msg) {
     var existing = document.getElementById('adminToast');
     if (existing) existing.remove();
 
     var toast = document.createElement('div');
     toast.id = 'adminToast';
-    toast.className = 'toast-notice';
-    toast.innerHTML =
-      '<svg class="ic-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 8 12 12 14 14"></polyline></svg>' +
-      '<span>' + message + '</span>';
+    toast.className = 'toast';
+    toast.textContent = msg;
     document.body.appendChild(toast);
 
     setTimeout(function () {
-      if (toast.parentNode) toast.parentNode.removeChild(toast);
+      toast.classList.add('show');
+    }, 10);
+
+    setTimeout(function () {
+      toast.classList.remove('show');
+      setTimeout(function () { toast.remove(); }, 300);
     }, 3200);
-  };
-
-  Admin.showLockedNotice = function (featureName) {
-    Admin.showModalNotice(
-      'Fitur Terkunci (Di Luar Lingkup Prototype)',
-      '<div style="text-align:center; padding:10px 0;">' +
-        '<div style="font-size:44px; margin-bottom:10px;">🔒</div>' +
-        '<div style="font-weight:700; font-size:16px; color:var(--ink); margin-bottom:6px;">Menu ' + featureName + ' Terkunci</div>' +
-        '<div style="font-size:13px; color:var(--muted); line-height:1.5;">Menu ini tidak termasuk dalam cakupan pengujian prototype sistem e-Parlemen.<br>Fokus prototype aktif adalah pada <strong>Manajemen Jadwal Rapat, Verifikasi Kuorum ⅔, dan Presensi QR</strong>.</div>' +
-      '</div>',
-      'Mengerti'
-    );
-  };
-
-  Admin.openLiveQRPresence = function () {
-    var all = Store.getMeetings();
-    var now = Store.now();
-    var ongoing = null;
-    for (var i = 0; i < all.length; i++) {
-      if (Rules.deriveMeetingStatus(all[i], now) === 'Berjalan' && all[i].status !== 'Batal') {
-        ongoing = all[i];
-        break;
-      }
-    }
-    var target = ongoing || all[0];
-    if (target) {
-      Admin.openQRModal(target.id);
-    } else {
-      Admin.showToast('Tidak ada rapat yang sedang berlangsung untuk ditampilkan QR Presensinya.');
-    }
   };
 
   window.Admin = Admin;

@@ -262,6 +262,15 @@ button { font-family: inherit; }
   background: #b52e2e;
 }
 
+.btn-success {
+  background: #1b7340;
+  color: #fff;
+  border: 1px solid #145931;
+}
+.btn-success:hover {
+  background: #145931;
+}
+
 /* Tombol Aksi Bawah Form Rapat Sesuai Request User */
 .btn-form-batal {
   background: #d64545 !important;
